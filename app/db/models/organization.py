@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import BaseModel
 from .mixins import StatusMixin
+
+if TYPE_CHECKING:
+    from .user import User
 
 
 class Organization(BaseModel, StatusMixin):
@@ -17,3 +21,5 @@ class Organization(BaseModel, StatusMixin):
     phone: Mapped[str] = mapped_column(nullable=False)
 
     address: Mapped[str] = mapped_column(nullable=False)
+
+    users: Mapped[list["User"]] = relationship(back_populates="organization")
