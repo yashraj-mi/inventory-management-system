@@ -1,3 +1,6 @@
+## Project Structure
+
+```text
 Inventory Management System
 .
 ├── app/
@@ -42,3 +45,4 @@ Inventory Management System
 ├── pyproject.toml
 ├── README.md
 └── uv.lock
+```
