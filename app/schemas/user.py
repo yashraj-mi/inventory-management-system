@@ -7,6 +7,10 @@ from app.constants.common_enum import Status
 
 
 class UserCreate(BaseModel):
+    """
+    Schema for creating a new user.
+    """
+
     organization_id: int
 
     role: UserRole
@@ -20,6 +24,11 @@ class UserCreate(BaseModel):
 
 
 class UserUpdate(BaseModel):
+    """
+    Schema for updating an existing user's details.
+    Fields are optional; only provided fields will be updated.
+    """
+
     role: UserRole | None = None
 
     first_name: str | None = Field(default=None, min_length=2, max_length=100)
@@ -32,6 +41,10 @@ class UserUpdate(BaseModel):
 
 
 class UserResponse(BaseModel):
+    """
+    Schema for returning user details in API responses.
+    """
+
     id: int
 
     organization_id: int

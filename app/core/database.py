@@ -16,6 +16,12 @@ class Base(DeclarativeBase):
 
 
 async def get_db():
+    """
+    Dependency function that provides a database session.
+
+    Yields:
+        AsyncSession: The active async database session.
+    """
     async with AsyncSessionLocal() as session:
         try:
             yield session

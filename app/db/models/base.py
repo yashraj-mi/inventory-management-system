@@ -6,6 +6,13 @@ from app.core.database import Base
 
 
 class BaseModel(Base):
+    """
+    Abstract base model that all database models inherit from.
+
+    Provides common columns `id`, `created_at`, and `updated_at` to ensure
+    consistent primary key and timestamp tracking across all database tables.
+    """
+
     __abstract__ = True
 
     id: Mapped[int] = mapped_column(primary_key=True)

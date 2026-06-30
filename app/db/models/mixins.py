@@ -5,6 +5,13 @@ from app.constants.common_enum import Status
 
 
 class StatusMixin:
+    """
+    Mixin class to provide a standard 'status' column to database models.
+
+    Uses the common `Status` enum (ACTIVE, INACTIVE, etc.) and defaults
+    new records to ACTIVE.
+    """
+
     status: Mapped[Status] = mapped_column(
         Enum(Status, values_callable=lambda enum: [e.value for e in enum]),
         nullable=False,

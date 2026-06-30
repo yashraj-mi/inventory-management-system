@@ -13,7 +13,7 @@ settings = get_settings()
 
 password_hash = PasswordHash.recommended()
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 
 class PasswordManager:
@@ -216,11 +216,12 @@ def refresh_access_token(token: str):
 
         user_id = payload.get("sub")
         token_type = payload.get("type")
+        role = payload.get("role")
 
         if not user_id or token_type != "refresh":
             raise AppException(status_code=401, message="Invalid token")
 
-        new_access_token = create_access_token(data={"sub": str(user_id)})
+        new_access_token = create_access_token(data={"sub": str(user_id), "role": role})
         return new_access_token
     except JWTError:
         raise AppException(status_code=401, message="Invalid token")

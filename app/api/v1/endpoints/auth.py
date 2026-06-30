@@ -32,17 +32,16 @@ async def login(
     db: AsyncSession = Depends(get_db),
     service: AuthService = Depends(get_auth_service),
 ) -> StandardResponse[LoginResponse]:
-    """Handles secure user login operations.
+    """
+    Handles secure user login operations.
 
     Args:
-        payload (UserLogin): The incoming data transfer object containing the
-          user's email and password.
+        payload (UserLogin): The incoming data transfer object containing the user's email and password.
         db (AsyncSession): The asynchronous database session dependency.
         service (AuthService): The authentication service layer orchestrator.
 
     Returns:
-        StandardResponse[UserResponse]: A standardized envelope containing the
-        authenticated user's profile details.
+        StandardResponse[LoginResponse]: A standardized envelope containing the authenticated user's access tokens.
     """
     # Delegate the credential verification logic to the service layer
     authenticated_user = await service.login(payload=payload, db=db)
@@ -62,7 +61,7 @@ async def login(
     summary="Refresh access token",
     description="Verify refresh token and generate new access token.",
 )
-async def refresh_acess_token(
+async def refresh_access_token(
     body: Token, service: AuthService = Depends(get_auth_service)
 ) -> StandardResponse[TokenResponse]:
     """

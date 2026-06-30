@@ -1,33 +1,71 @@
+from typing import Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 from app.db.models.organization import Organization
 
 
 class OrganizationRepository:
-    """Repository layer handling raw database persistence operations for corporate
-
-    Organization entities.
+    """
+    Repository layer for managing Organization entities in the database.
     """
 
     async def create(
         self, db: AsyncSession, organization: Organization
     ) -> Organization:
-        """Persists a new organization record instance inside the running database transaction.
+        """
+        Creates a new organization record in the database.
 
         Args:
-            db (AsyncSession): The active asynchronous database session bridge.
-            organization (Organization): The un-persisted declarative model instance.
+            db (AsyncSession): The active database session context.
+            organization (Organization): The organization entity to create.
 
         Returns:
-            Organization: The database-synchronized model instance populated with primary keys
-                and server-side timestamps.
+            Organization: The created organization instance with its assigned ID.
         """
-        # Place the model instance into the session state tracking map
         db.add(organization)
-
-        # Flush pending changes to the database buffer to trigger constraint checks and IDs
         await db.flush()
-
-        # Reload the instance state from the database to populate server-generated default columns
         await db.refresh(organization)
-
         return organization
+
+    async def get_by_id(
+        self, db: AsyncSession, organization_id: int
+    ) -> Organization | None:
+        """
+        Retrieves a single organization by its primary key.
+
+        Args:
+            db (AsyncSession): The active database session context.
+            organization_id (int): The ID of the organization to fetch.
+
+        Returns:
+            Organization | None: The found organization, or None if it doesn't exist.
+        """
+        return await db.get(Organization, organization_id)
+
+    async def get_all(
+        self, db: AsyncSession, skip: int = 0, limit: int = 100
+    ) -> Sequence[Organization]:
+        """
+        Retrieves a paginated list of all organizations.
+
+        Args:
+            db (AsyncSession): The active database session context.
+            skip (int): The number of records to skip (for pagination).
+            limit (int): The maximum number of records to return.
+
+        Returns:
+            Sequence[Organization]: A sequence of Organization instances.
+        """
+        result = await db.execute(select(Organization).offset(skip).limit(limit))
+        return result.scalars().all()
+
+    async def delete(self, db: AsyncSession, organization: Organization) -> None:
+        """
+        Deletes an organization record from the database.
+
+        Args:
+            db (AsyncSession): The active database session context.
+            organization (Organization): The organization entity to delete.
+        """
+        await db.delete(organization)
+        await db.flush()
