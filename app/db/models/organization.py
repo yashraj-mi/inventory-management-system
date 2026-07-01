@@ -1,3 +1,9 @@
+"""
+organization.py module.
+
+Provides core functionality and components for the organization domain.
+"""
+
 from __future__ import annotations
 from typing import TYPE_CHECKING, Optional
 from sqlalchemy import ForeignKey, Enum

@@ -1,3 +1,9 @@
+"""
+auth_repository.py module.
+
+Provides core functionality and components for the auth_repository domain.
+"""
+
 from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

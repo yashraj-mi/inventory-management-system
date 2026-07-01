@@ -1,3 +1,9 @@
+"""
+router.py module.
+
+Provides core functionality and components for the router domain.
+"""
+
 from fastapi import APIRouter
 from app.api.v1.endpoints.organization import router as organization_router
 from app.api.v1.endpoints.users import router as user_router

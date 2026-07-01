@@ -1,3 +1,9 @@
+"""
+auth.py module.
+
+Provides core functionality and components for the auth domain.
+"""
+
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -5,6 +11,7 @@ from app.core.database import get_db
 from app.schemas.auth import UserLogin, LoginResponse, TokenResponse, Token
 from app.schemas.response import StandardResponse
 from app.services.auth_service import AuthService
+from app.constants.auth_enum import AuthMessages
 
 # Initialize the router with a dedicated prefix and documentation tags
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -49,7 +56,7 @@ async def login(
     # Wrap the returned user entity inside your global API response structure
     return StandardResponse(
         success=True,
-        message="User authenticated successfully.",
+        message=AuthMessages.LOGIN_SUCCESSFUL,
         data=authenticated_user,
     )
 
@@ -84,8 +91,9 @@ async def refresh_access_token(
             Standard API response containing the newly generated
             access token.
     """
+    new_access_token = await service.refresh_token(body.token)
     return StandardResponse(
         success=True,
-        message="Access token refreshed successfully",
-        data=await service.refresh_token(body.token),
+        message=AuthMessages.TOKEN_REFRESHED,
+        data=new_access_token,
     )

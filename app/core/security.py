@@ -1,3 +1,9 @@
+"""
+security.py module.
+
+Provides core functionality and components for the security domain.
+"""
+
 from datetime import datetime, timedelta, timezone
 
 from pwdlib import PasswordHash
@@ -175,19 +181,20 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
             Raised when the token is invalid or the
             required user identifier is missing.
     """
+    payload = decode_token(token)
 
-    try:
-        payload = jwt.decode(
-            token, settings.JWT_SECRET_KEY, algorithms=[settings.ALGORITHM]
-        )
-        user_id = payload.get("sub")
+    user_id = payload.get("sub")
+    token_type = payload.get("type")
 
-        if not user_id:
-            raise AppException(status_code=401, message="Invalid token")
-
-        return payload
-    except JWTError:
+    if not user_id:
         raise AppException(status_code=401, message="Invalid token")
+
+    if token_type != "access":
+        raise AppException(
+            status_code=401, message="Invalid token: expected access token"
+        )
+
+    return payload
 
 
 def refresh_access_token(token: str):
@@ -210,18 +217,17 @@ def refresh_access_token(token: str):
             Raised when the token is invalid, expired,
             malformed, or not a refresh token.
     """
+    payload = decode_token(token)
 
-    try:
-        payload = decode_token(token)
+    user_id = payload.get("sub")
+    token_type = payload.get("type")
+    role = payload.get("role")
+    org_id = payload.get("org_id")
 
-        user_id = payload.get("sub")
-        token_type = payload.get("type")
-        role = payload.get("role")
-
-        if not user_id or token_type != "refresh":
-            raise AppException(status_code=401, message="Invalid token")
-
-        new_access_token = create_access_token(data={"sub": str(user_id), "role": role})
-        return new_access_token
-    except JWTError:
+    if not user_id or token_type != "refresh":
         raise AppException(status_code=401, message="Invalid token")
+
+    new_access_token = create_access_token(
+        data={"sub": str(user_id), "role": role, "org_id": org_id}
+    )
+    return new_access_token

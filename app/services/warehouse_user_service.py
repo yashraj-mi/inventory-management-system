@@ -1,9 +1,18 @@
+"""
+warehouse_user_service.py module.
+
+Provides core functionality and components for the warehouse_user_service domain.
+"""
+
 from typing import Sequence
+from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from app.repositories.warehouse_user_repository import WarehouseUserRepository
 from app.db.models.warehouse_users import WarehouseUsers
 from app.schemas.warehouse_user import WarehouseUserAssign
 from app.core.exceptions import AppException
+from app.constants.warehouse_user_enum import WarehouseUserMessages
 
 
 class WarehouseUserService:
@@ -12,6 +21,15 @@ class WarehouseUserService:
     """
 
     def __init__(self, repo: WarehouseUserRepository | None = None) -> None:
+        """
+        Executes the __init__ operation.
+
+        Args:
+            repo: Parameter description.
+
+        Returns:
+            Execution result.
+        """
         self.repo = repo or WarehouseUserRepository()
 
     async def list_users_in_warehouse(
@@ -55,15 +73,28 @@ class WarehouseUserService:
         existing = await self.repo.get_assignment(db, warehouse_id, payload.user_id)
         if existing:
             raise AppException(
-                message="User is already assigned to this warehouse.", status_code=400
+                message=WarehouseUserMessages.ALREADY_ASSIGNED,
+                status_code=status.HTTP_400_BAD_REQUEST,
             )
 
         new_assignment = WarehouseUsers(
             warehouse_id=warehouse_id, user_id=payload.user_id, assigned_by=actor_id
         )
 
-        assignment = await self.repo.add(db, new_assignment)
-        await db.commit()
+        try:
+            assignment = await self.repo.add(db, new_assignment)
+        except IntegrityError:
+            await db.rollback()
+            raise AppException(
+                message=WarehouseUserMessages.ALREADY_ASSIGNED,
+                status_code=status.HTTP_409_CONFLICT,
+            )
+        except SQLAlchemyError:
+            await db.rollback()
+            raise AppException(
+                message=WarehouseUserMessages.DB_UNEXPECTED_ASSIGNMENT,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         return assignment
 
     async def remove_user_from_warehouse(
@@ -83,8 +114,21 @@ class WarehouseUserService:
         assignment = await self.repo.get_assignment(db, warehouse_id, user_id)
         if not assignment:
             raise AppException(
-                message="Assignment mapping record not found.", status_code=404
+                message=WarehouseUserMessages.NOT_FOUND,
+                status_code=status.HTTP_404_NOT_FOUND,
             )
 
-        await self.repo.delete(db, assignment)
-        await db.commit()
+        try:
+            await self.repo.delete(db, assignment)
+        except IntegrityError:
+            await db.rollback()
+            raise AppException(
+                message=WarehouseUserMessages.DB_RELATIONAL_CONSTRAINTS,
+                status_code=status.HTTP_409_CONFLICT,
+            )
+        except SQLAlchemyError:
+            await db.rollback()
+            raise AppException(
+                message=WarehouseUserMessages.DB_UNEXPECTED_REMOVAL,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )

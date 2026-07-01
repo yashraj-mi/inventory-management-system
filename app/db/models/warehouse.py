@@ -1,3 +1,9 @@
+"""
+warehouse.py module.
+
+Provides core functionality and components for the warehouse domain.
+"""
+
 from sqlalchemy.orm import mapped_column, Mapped
 
 from sqlalchemy import Enum, ForeignKey, UniqueConstraint

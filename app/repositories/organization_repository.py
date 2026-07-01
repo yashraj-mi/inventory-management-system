@@ -1,3 +1,9 @@
+"""
+organization_repository.py module.
+
+Provides core functionality and components for the organization_repository domain.
+"""
+
 from typing import Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -42,21 +48,17 @@ class OrganizationRepository:
         """
         return await db.get(Organization, organization_id)
 
-    async def get_all(
-        self, db: AsyncSession, skip: int = 0, limit: int = 100
-    ) -> Sequence[Organization]:
+    async def get_all(self, db: AsyncSession) -> Sequence[Organization]:
         """
         Retrieves a paginated list of all organizations.
 
         Args:
             db (AsyncSession): The active database session context.
-            skip (int): The number of records to skip (for pagination).
-            limit (int): The maximum number of records to return.
 
         Returns:
             Sequence[Organization]: A sequence of Organization instances.
         """
-        result = await db.execute(select(Organization).offset(skip).limit(limit))
+        result = await db.execute(select(Organization))
         return result.scalars().all()
 
     async def delete(self, db: AsyncSession, organization: Organization) -> None:

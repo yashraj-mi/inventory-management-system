@@ -1,3 +1,9 @@
+"""
+user.py module.
+
+Provides core functionality and components for the user domain.
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

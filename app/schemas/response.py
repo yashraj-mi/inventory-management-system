@@ -1,3 +1,9 @@
+"""
+response.py module.
+
+Provides core functionality and components for the response domain.
+"""
+
 from typing import Generic, TypeVar
 from pydantic import BaseModel
 

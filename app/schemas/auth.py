@@ -1,3 +1,9 @@
+"""
+auth.py module.
+
+Provides core functionality and components for the auth domain.
+"""
+
 from pydantic import Field, EmailStr, BaseModel
 
 
@@ -50,4 +56,4 @@ class Token(BaseModel):
         token (str): The JWT token string.
     """
 
-    token: str
+    token: str = Field(..., min_length=1)

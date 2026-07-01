@@ -1,5 +1,12 @@
+"""
+organization.py module.
+
+Provides core functionality and components for the organization domain.
+"""
+
+import secrets
 from typing import List
-from fastapi import APIRouter, Depends, BackgroundTasks
+from fastapi import APIRouter, Depends, BackgroundTasks, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -11,13 +18,17 @@ from app.schemas.organization import (
 from app.services.organization_service import OrganizationService
 from app.schemas.response import StandardResponse
 from app.core.security import get_current_user
-from app.schemas.user import UserResponse
-from app.dependencies.auth import ALLOW_SUPER_ADMIN, ALLOW_SUPER_ADMIN_OR_ORG_ADMIN
+from app.core.exceptions import AppException
+from app.dependencies.auth import (
+    ALLOW_SUPER_ADMIN,
+    ALLOW_SUPER_ADMIN_OR_ORG_ADMIN,
+    verify_tenant_access,
+)
 from app.services.email_service import email_service
-from app.constants.organization_enum import OrganizationStatus
+from app.constants.organization_enum import OrganizationStatus, OrganizationMessages
 from app.services.user_service import UserService
 from app.constants.user_enum import UserRole
-from app.schemas.user import UserCreate
+from app.schemas.user import UserCreateInternal
 
 user_service = UserService()
 router = APIRouter(prefix="/organizations", tags=["Organizations"])
@@ -37,7 +48,7 @@ def get_organization_service() -> OrganizationService:
 @router.post(
     "",
     response_model=StandardResponse[OrganizationResponse],
-    status_code=201,
+    status_code=status.HTTP_201_CREATED,
     summary="Submit organization request",
 )
 async def register_organization(
@@ -65,11 +76,11 @@ async def register_organization(
     email_service.send_pending_review_email(
         background_tasks=background_tasks, recipient=db_org.email, org_name=db_org.name
     )
-
+    db_org = OrganizationResponse.model_validate(db_org)
     return StandardResponse(
         success=True,
-        message="Organization request submitted successfully.",
-        data=OrganizationResponse.model_validate(db_org),
+        message=OrganizationMessages.REGISTERED_SUCCESSFULLY,
+        data=db_org,
     )
 
 
@@ -81,8 +92,6 @@ async def register_organization(
     summary="List all organizations",
 )
 async def list_organizations(
-    skip: int = 0,
-    limit: int = 100,
     db: AsyncSession = Depends(get_db),
     service: OrganizationService = Depends(get_organization_service),
 ):
@@ -90,19 +99,18 @@ async def list_organizations(
     List all registered organizations (Super Admin only).
 
     Args:
-        skip (int): Pagination offset.
-        limit (int): Pagination limit.
         db (AsyncSession): The active database session context.
         service (OrganizationService): The organization service layer.
 
     Returns:
         StandardResponse[List[OrganizationResponse]]: A list of all organizations.
     """
-    orgs = await service.list_organizations(db, skip, limit)
+    orgs = await service.list_organizations(db)
+    orgs = [OrganizationResponse.model_validate(o) for o in orgs]
     return StandardResponse(
         success=True,
-        message="Organizations retrieved successfully.",
-        data=[OrganizationResponse.model_validate(o) for o in orgs],
+        message=OrganizationMessages.LIST_RETRIEVED,
+        data=orgs,
     )
 
 
@@ -117,6 +125,7 @@ async def get_organization(
     org_id: int,
     db: AsyncSession = Depends(get_db),
     service: OrganizationService = Depends(get_organization_service),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Retrieve details of a single organization by ID.
@@ -131,12 +140,13 @@ async def get_organization(
     Returns:
         StandardResponse[OrganizationResponse]: The requested organization details.
     """
+    verify_tenant_access(current_user, org_id)
     org = await service.get_organization(db, org_id)
-
+    org = OrganizationResponse.model_validate(org)
     return StandardResponse(
         success=True,
-        message="Organization retrieved successfully.",
-        data=OrganizationResponse.model_validate(org),
+        message=OrganizationMessages.DETAILS_RETRIEVED,
+        data=org,
     )
 
 
@@ -153,7 +163,7 @@ async def review_organization(
     payload: OrganizationStatusUpdate,
     db: AsyncSession = Depends(get_db),
     service: OrganizationService = Depends(get_organization_service),
-    current_user: UserResponse = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Review an organization request, updating its status to ACTIVE or REJECTED.
@@ -171,9 +181,12 @@ async def review_organization(
     Returns:
         StandardResponse[OrganizationResponse]: The updated organization details.
     """
-    admin_id = int(
-        current_user.get("sub") if isinstance(current_user, dict) else current_user.id
-    )
+    sub = current_user.get("sub")
+    if not sub:
+        raise AppException(
+            message="Invalid token: missing user identifier.", status_code=401
+        )
+    admin_id = int(sub)
 
     # Core status update transaction execution
     updated_org = await service.update_status(db, org_id, payload, admin_id)
@@ -186,13 +199,14 @@ async def review_organization(
             org_name=updated_org.name,
         )
 
-        user_payload = UserCreate(
+        temp_password = secrets.token_urlsafe(16)
+        user_payload = UserCreateInternal(
             organization_id=updated_org.id,
-            role=UserRole.ORG_ADMIN.value,
+            role=UserRole.ORG_ADMIN,
             first_name=updated_org.name,
-            last_name="not defined",
+            last_name="Admin",
             email=updated_org.email,
-            password="12345678",
+            password=temp_password,
         )
 
         await user_service.create_user(db=db, payload=user_payload)
@@ -201,19 +215,22 @@ async def review_organization(
             first_name=user_payload.first_name,
             recipient=user_payload.email,
             org_name=updated_org.name,
-            temp_password="12345678",
+            temp_password=temp_password,
         )
+
+    org = OrganizationResponse.model_validate(updated_org)
 
     return StandardResponse(
         success=True,
-        message=f"Organization status updated to {payload.status}.",
-        data=OrganizationResponse.model_validate(updated_org),
+        message=OrganizationMessages.STATUS_UPDATED,
+        data=org,
     )
 
 
 # 5. DELETE: Restrictive deletion endpoint
 @router.delete(
     "/{org_id}",
+    status_code=status.HTTP_200_OK,
     response_model=StandardResponse[None],
     dependencies=[Depends(ALLOW_SUPER_ADMIN)],
     summary="Permanently delete an organization",
@@ -222,7 +239,7 @@ async def delete_organization(
     org_id: int,
     db: AsyncSession = Depends(get_db),
     service: OrganizationService = Depends(get_organization_service),
-):
+) -> StandardResponse[None]:
     """
     Permanently delete an organization from the system.
 
@@ -237,6 +254,6 @@ async def delete_organization(
     await service.remove_organization(db, org_id)
     return StandardResponse(
         success=True,
-        message="Organization completely purged from the system.",
+        message=OrganizationMessages.DELETED_SUCCESSFULLY,
         data=None,
     )

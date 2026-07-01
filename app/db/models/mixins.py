@@ -1,3 +1,9 @@
+"""
+mixins.py module.
+
+Provides core functionality and components for the mixins domain.
+"""
+
 from sqlalchemy import Enum
 from sqlalchemy.orm import Mapped, mapped_column
 

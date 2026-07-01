@@ -1,3 +1,9 @@
+"""
+email_service.py module.
+
+Provides core functionality and components for the email_service domain.
+"""
+
 from pathlib import Path
 from fastapi import BackgroundTasks
 from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType
@@ -14,6 +20,14 @@ class EmailService:
     """
 
     def __init__(self):
+        """
+        Executes the __init__ operation.
+
+        Args:
+
+        Returns:
+            Execution result.
+        """
         self.config = ConnectionConfig(
             MAIL_USERNAME=settings.MAIL_USERNAME,
             MAIL_PASSWORD=settings.MAIL_PASSWORD,

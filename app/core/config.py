@@ -1,3 +1,9 @@
+"""
+config.py module.
+
+Provides core functionality and components for the config domain.
+"""
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 
@@ -23,6 +29,8 @@ class Settings(BaseSettings):
     MAIL_STARTTLS: bool
     MAIL_SSL_TLS: bool
     MAIL_FROM_NAME: str
+    ADMIN_EMAIL: str
+    ADMIN_PASSWORD: str
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

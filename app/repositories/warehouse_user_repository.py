@@ -1,3 +1,9 @@
+"""
+warehouse_user_repository.py module.
+
+Provides core functionality and components for the warehouse_user_repository domain.
+"""
+
 from typing import Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select

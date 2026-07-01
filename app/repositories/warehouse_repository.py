@@ -1,4 +1,11 @@
-from sqlalchemy import select, Sequence
+"""
+warehouse_repository.py module.
+
+Provides core functionality and components for the warehouse_repository domain.
+"""
+
+from collections.abc import Sequence
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.warehouse import Warehouse
 
@@ -20,7 +27,7 @@ class WarehouseRepository:
             Warehouse: The created warehouse instance with its assigned ID.
         """
         db.add(warehouse)
-        await db.commit()
+        await db.flush()
         await db.refresh(warehouse)
         return warehouse
 
@@ -98,7 +105,7 @@ class WarehouseRepository:
         Returns:
             Warehouse: The updated warehouse instance.
         """
-        await db.commit()
+        await db.flush()
         await db.refresh(warehouse)
         return warehouse
 
@@ -111,4 +118,4 @@ class WarehouseRepository:
             warehouse (Warehouse): The warehouse entity to delete.
         """
         await db.delete(warehouse)
-        await db.commit()
+        await db.flush()

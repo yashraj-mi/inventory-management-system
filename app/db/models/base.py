@@ -1,3 +1,9 @@
+"""
+base.py module.
+
+Provides core functionality and components for the base domain.
+"""
+
 from datetime import datetime, timezone
 from sqlalchemy import DateTime
 from sqlalchemy.orm import Mapped, mapped_column

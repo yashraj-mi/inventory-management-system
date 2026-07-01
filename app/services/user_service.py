@@ -1,12 +1,20 @@
+"""
+user_service.py module.
+
+Provides core functionality and components for the user_service domain.
+"""
+
 from collections.abc import Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from fastapi import status
 from app.db.models.user import User
 from app.repositories.user_repository import UserRepository
-from app.schemas.user import UserCreate, UserUpdate
+from app.schemas.user import UserCreateInternal, UserUpdate
 from app.core.security import PasswordManager
 from app.core.exceptions import AppException
 from app.repositories.organization_repository import OrganizationRepository
+from app.constants.user_enum import UserMessages
 
 
 class UserService:
@@ -16,16 +24,25 @@ class UserService:
     """
 
     def __init__(self, user_repo: UserRepository | None = None) -> None:
+        """
+        Executes the __init__ operation.
+
+        Args:
+            user_repo: Parameter description.
+
+        Returns:
+            Execution result.
+        """
         self.user_repo = user_repo or UserRepository()
         self.org_repo = OrganizationRepository()
 
-    async def create_user(self, db: AsyncSession, payload: UserCreate) -> User:
+    async def create_user(self, db: AsyncSession, payload: UserCreateInternal) -> User:
         """
         Orchestrates user creation flow, including password hashing and session commit.
 
         Args:
             db (AsyncSession): The active database session context.
-            payload (UserCreate): The payload containing user details.
+            payload (UserCreateInternal): The payload containing user details.
 
         Returns:
             User: The newly created user instance.
@@ -36,8 +53,8 @@ class UserService:
         existing_user = await self.user_repo.get_by_email(db, payload.email)
         if existing_user:
             raise AppException(
-                message=f"User with email '{payload.email}' already exists.",
-                status_code=409,
+                message=UserMessages.ALREADY_EXISTS.format(email=payload.email),
+                status_code=status.HTTP_409_CONFLICT,
             )
 
         hashed_password = PasswordManager.hash_password(payload.password)
@@ -50,11 +67,22 @@ class UserService:
             password_hash=hashed_password,
         )
 
-        await self.user_repo.create(db=db, user=user)
-
-        # Explicitly commit the active transaction lifecycle here
-        await db.commit()
-        await db.refresh(user)
+        try:
+            await self.user_repo.create(db=db, user=user)
+            await db.flush()
+            await db.refresh(user)
+        except IntegrityError:
+            await db.rollback()
+            raise AppException(
+                message=UserMessages.ALREADY_EXISTS.format(email=payload.email),
+                status_code=status.HTTP_409_CONFLICT,
+            )
+        except SQLAlchemyError:
+            await db.rollback()
+            raise AppException(
+                message=UserMessages.DB_UNEXPECTED_CREATION,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         return user
 
     async def update_user(
@@ -77,9 +105,21 @@ class UserService:
         for field, value in update_data.items():
             setattr(user, field, value)
 
-        # Commit changes tracked by SQLAlchemy automatically
-        await db.commit()
-        await db.refresh(user)
+        try:
+            await db.flush()
+            await db.refresh(user)
+        except IntegrityError:
+            await db.rollback()
+            raise AppException(
+                message=UserMessages.DB_CONSTRAINT_VIOLATION,
+                status_code=status.HTTP_409_CONFLICT,
+            )
+        except SQLAlchemyError:
+            await db.rollback()
+            raise AppException(
+                message=UserMessages.DB_UNEXPECTED_UPDATE,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         return user
 
     async def delete_user(self, db: AsyncSession, user_id: int) -> None:
@@ -92,8 +132,21 @@ class UserService:
         """
         user = await self.get_user(db=db, user_id=user_id)
 
-        await self.user_repo.delete(db=db, user=user)
-        await db.commit()
+        try:
+            await self.user_repo.delete(db=db, user=user)
+            await db.flush()
+        except IntegrityError:
+            await db.rollback()
+            raise AppException(
+                message=UserMessages.DB_RELATIONAL_CONSTRAINTS,
+                status_code=status.HTTP_409_CONFLICT,
+            )
+        except SQLAlchemyError:
+            await db.rollback()
+            raise AppException(
+                message=UserMessages.DB_UNEXPECTED_DELETION,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     async def get_all_users(self, db: AsyncSession) -> Sequence[User]:
         """
@@ -124,7 +177,8 @@ class UserService:
         user = await self.user_repo.get_by_id(db=db, user_id=user_id)
         if not user:
             raise AppException(
-                message=f"User with ID {user_id} not found.", status_code=404
+                message=UserMessages.NOT_FOUND.format(user_id=user_id),
+                status_code=status.HTTP_404_NOT_FOUND,
             )
         return user
 
@@ -149,8 +203,8 @@ class UserService:
         organization_exists = await self.org_repo.get_by_id(db, organization_id=org_id)
         if not organization_exists:
             raise AppException(
-                message=f"Organization resource verification failed for ID: {org_id}",
-                status_code=404,
+                message=UserMessages.ORG_NOT_FOUND.format(org_id=org_id),
+                status_code=status.HTTP_404_NOT_FOUND,
             )
 
         # 2. Extract collection matching target database elements safely

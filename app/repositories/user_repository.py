@@ -1,3 +1,9 @@
+"""
+user_repository.py module.
+
+Provides core functionality and components for the user_repository domain.
+"""
+
 from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

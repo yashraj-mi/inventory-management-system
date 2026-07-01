@@ -1,3 +1,9 @@
+"""
+warehouse_user.py module.
+
+Provides core functionality and components for the warehouse_user domain.
+"""
+
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 

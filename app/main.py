@@ -1,9 +1,15 @@
+"""
+main.py module.
+
+Provides core functionality and components for the main domain.
+"""
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from app.db.models.organization import Organization  # noqa: F401
 from app.db.models.warehouse import Warehouse  # noqa: F401
 from app.db.models.warehouse_users import WarehouseUsers  # noqa: F401
-from app.core.database import engine, Base
 from app.api.v1.router import api_router
 
 from app.core.error_handlers import init_error_handlers
@@ -16,13 +22,22 @@ async def lifespan(app: FastAPI):
 
     Creates all database tables based on SQLAlchemy models on startup.
     """
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # Base.metadata.create_all is now handled by Alembic migrations
+    # async with engine.begin() as conn:
+    #     await conn.run_sync(Base.metadata.create_all)
 
     yield
 
 
 app = FastAPI(title="Inventory Management System", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # TODO: Restrict in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 init_error_handlers(app)
 

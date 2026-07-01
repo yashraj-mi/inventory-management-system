@@ -1,3 +1,9 @@
+"""
+organization.py module.
+
+Provides core functionality and components for the organization domain.
+"""
+
 from datetime import datetime
 from typing import Optional
 from pydantic import Field, EmailStr, BaseModel, ConfigDict

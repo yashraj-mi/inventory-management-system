@@ -1,3 +1,9 @@
+"""
+warehouse_users.py module.
+
+Provides core functionality and components for the warehouse_users domain.
+"""
+
 from sqlalchemy.orm import mapped_column, Mapped
 
 from sqlalchemy import ForeignKey, UniqueConstraint
