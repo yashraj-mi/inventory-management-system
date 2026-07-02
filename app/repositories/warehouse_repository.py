@@ -27,8 +27,6 @@ class WarehouseRepository:
             Warehouse: The created warehouse instance with its assigned ID.
         """
         db.add(warehouse)
-        await db.flush()
-        await db.refresh(warehouse)
         return warehouse
 
     async def get_all(self, db: AsyncSession) -> list[Warehouse]:
@@ -105,8 +103,6 @@ class WarehouseRepository:
         Returns:
             Warehouse: The updated warehouse instance.
         """
-        await db.flush()
-        await db.refresh(warehouse)
         return warehouse
 
     async def delete(self, db: AsyncSession, warehouse: Warehouse) -> None:
@@ -118,4 +114,3 @@ class WarehouseRepository:
             warehouse (Warehouse): The warehouse entity to delete.
         """
         await db.delete(warehouse)
-        await db.flush()

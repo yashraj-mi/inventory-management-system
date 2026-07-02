@@ -17,6 +17,7 @@ from app.core.exceptions import AppException
 from app.dependencies.auth import ALLOW_ADMIN_OR_MANAGER, verify_tenant_access
 from app.services.warehouse_service import WarehouseService
 from app.constants.warehouse_user_enum import WarehouseUserMessages
+from app.constants.auth_enum import AuthMessages
 
 router = APIRouter(prefix="/warehouses", tags=["Warehouse Users"])
 
@@ -108,7 +109,7 @@ async def assign_user(
     sub = current_user.get("sub")
     if not sub:
         raise AppException(
-            message="Invalid token: missing user identifier.", status_code=401
+            message=AuthMessages.INVALID_TOKEN, status_code=status.HTTP_401_UNAUTHORIZED
         )
     actor_id = int(sub)
 

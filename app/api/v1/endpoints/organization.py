@@ -29,6 +29,7 @@ from app.constants.organization_enum import OrganizationStatus, OrganizationMess
 from app.services.user_service import UserService
 from app.constants.user_enum import UserRole
 from app.schemas.user import UserCreateInternal
+from app.constants.auth_enum import AuthMessages
 
 user_service = UserService()
 router = APIRouter(prefix="/organizations", tags=["Organizations"])
@@ -184,7 +185,7 @@ async def review_organization(
     sub = current_user.get("sub")
     if not sub:
         raise AppException(
-            message="Invalid token: missing user identifier.", status_code=401
+            message=AuthMessages.INVALID_TOKEN, status_code=status.HTTP_401_UNAUTHORIZED
         )
     admin_id = int(sub)
 
@@ -204,7 +205,6 @@ async def review_organization(
             organization_id=updated_org.id,
             role=UserRole.ORG_ADMIN,
             first_name=updated_org.name,
-            last_name="Admin",
             email=updated_org.email,
             password=temp_password,
         )

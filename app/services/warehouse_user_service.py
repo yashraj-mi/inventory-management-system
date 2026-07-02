@@ -83,6 +83,7 @@ class WarehouseUserService:
 
         try:
             assignment = await self.repo.add(db, new_assignment)
+            await db.flush()
         except IntegrityError:
             await db.rollback()
             raise AppException(
@@ -120,6 +121,7 @@ class WarehouseUserService:
 
         try:
             await self.repo.delete(db, assignment)
+            await db.flush()
         except IntegrityError:
             await db.rollback()
             raise AppException(

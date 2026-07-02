@@ -5,11 +5,12 @@ Provides core functionality and components for the auth domain.
 """
 
 from typing import List
-from fastapi import Depends
+from fastapi import Depends, status
 
 from app.constants.user_enum import UserRole
 from app.core.exceptions import AppException
 from app.core.security import get_current_user
+from app.constants.auth_enum import AuthMessages
 
 
 class RoleChecker:
@@ -48,8 +49,8 @@ class RoleChecker:
         role = current_user.get("role")
         if role not in [r.value for r in self.allowed_roles]:
             raise AppException(
-                message="You do not have permission to access this resource",
-                status_code=403,
+                message=AuthMessages.RESOURCE_ACCESS,
+                status_code=status.HTTP_403_FORBIDDEN,
             )
 
         return current_user
@@ -81,6 +82,6 @@ def verify_tenant_access(current_user: dict, target_org_id: int) -> None:
 
     if user_role != UserRole.SUPER_ADMIN.value and user_org_id != target_org_id:
         raise AppException(
-            message="Forbidden: You do not have permission to access another organization's data.",
-            status_code=403,
+            message=AuthMessages.NO_PERMISSION,
+            status_code=status.HTTP_403_FORBIDDEN,
         )

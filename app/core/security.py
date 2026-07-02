@@ -9,11 +9,12 @@ from datetime import datetime, timedelta, timezone
 from pwdlib import PasswordHash
 from jose import jwt, JWTError
 
-from fastapi import Depends
+from fastapi import Depends, status
 from fastapi.security import OAuth2PasswordBearer
 
 from app.core.config import get_settings
 from app.core.exceptions import AppException
+from app.constants.auth_enum import AuthMessages
 
 settings = get_settings()
 
@@ -157,7 +158,9 @@ def decode_token(token: str) -> dict:
         )
 
     except JWTError:
-        raise AppException(status_code=401, message="Invalid token")
+        raise AppException(
+            status_code=status.HTTP_401_UNAUTHORIZED, message=AuthMessages.INVALID_TOKEN
+        )
 
 
 def get_current_user(token: str = Depends(oauth2_scheme)):
@@ -187,11 +190,13 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
     token_type = payload.get("type")
 
     if not user_id:
-        raise AppException(status_code=401, message="Invalid token")
+        raise AppException(
+            status_code=status.HTTP_401_UNAUTHORIZED, message=AuthMessages.INVALID_TOKEN
+        )
 
     if token_type != "access":
         raise AppException(
-            status_code=401, message="Invalid token: expected access token"
+            status_code=status.HTTP_401_UNAUTHORIZED, message=AuthMessages.INVALID_TOKEN
         )
 
     return payload
@@ -225,7 +230,9 @@ def refresh_access_token(token: str):
     org_id = payload.get("org_id")
 
     if not user_id or token_type != "refresh":
-        raise AppException(status_code=401, message="Invalid token")
+        raise AppException(
+            status_code=status.HTTP_401_UNAUTHORIZED, message=AuthMessages.INVALID_TOKEN
+        )
 
     new_access_token = create_access_token(
         data={"sub": str(user_id), "role": role, "org_id": org_id}

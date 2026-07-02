@@ -11,6 +11,8 @@ from app.core.exceptions import AppException
 from app.schemas.response import StandardResponse
 import logging
 
+from app.constants.common_enum import CrudMessages
+
 logger = logging.getLogger(__name__)
 
 
@@ -65,7 +67,7 @@ def init_error_handlers(app: FastAPI):
         ]
 
         response_body = StandardResponse(
-            success=False, message="Validation Failed", data=errors
+            success=False, message=CrudMessages.VALIDATION_FAILED, data=errors
         )
 
         return JSONResponse(
@@ -91,7 +93,7 @@ def init_error_handlers(app: FastAPI):
         )
         response_body = StandardResponse(
             success=False,
-            message="An unexpected internal server error occurred.",
+            message=CrudMessages.INTERNAL_SERVER_ERROR,
             data=None,
         )
         return JSONResponse(

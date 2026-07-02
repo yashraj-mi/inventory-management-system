@@ -47,7 +47,4 @@ class AuthRepository:
         # Generates a clean, timezone-naive UTC timestamp to match your TIMESTAMP WITHOUT TIME ZONE column
         user.last_login = datetime.now(timezone.utc).replace(tzinfo=None)
 
-        # Synchronizes state changes to the database buffer pipeline within the current running transaction
-        await db.flush()
-
         return user

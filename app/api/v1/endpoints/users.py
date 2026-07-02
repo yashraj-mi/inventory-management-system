@@ -22,6 +22,7 @@ from app.dependencies.auth import (
 )
 from app.constants.common_enum import CrudMessages
 from app.core.security import get_current_user
+from app.constants.user_enum import UserMessages
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -147,7 +148,9 @@ async def get_organization_users(
 
     return StandardResponse(
         success=True,
-        message=f"Successfully retrieved all member accounts provisioned inside organization ID: {organization_id}.",
+        message=UserMessages.ORG_USERS_RETRIEVED.format(
+            organization_id=organization_id
+        ),
         data=validated_users,
     )
 

@@ -49,7 +49,7 @@ class User(BaseModel, StatusMixin):
 
     first_name: Mapped[str] = mapped_column(nullable=False)
 
-    last_name: Mapped[str] = mapped_column(nullable=False)
+    last_name: Mapped[str] = mapped_column(nullable=True)
 
     email: Mapped[str] = mapped_column(unique=True, nullable=False, index=True)
 

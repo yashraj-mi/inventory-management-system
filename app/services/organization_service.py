@@ -57,6 +57,8 @@ class OrganizationService:
         )
         try:
             db_org = await self.organization_repo.create(db, organization)
+            await db.flush()
+            await db.refresh(db_org)
         except IntegrityError:
             await db.rollback()
             raise AppException(
@@ -165,77 +167,6 @@ class OrganizationService:
             )
         return org
 
-    # async def approve_organization(self, db: AsyncSession, org_id: int, admin_id: int):
-    #     """
-    #     Helper method to explicitly approve an organization, setting its status to ACTIVE.
-    #
-    #     Args:
-    #         db (AsyncSession): The active database session context.
-    #         org_id (int): The ID of the organization to approve.
-    #         admin_id (int): The ID of the super admin performing the approval.
-    #
-    #     Returns:
-    #         Organization: The approved organization instance.
-    #     """
-    #     org = await self.get_organization(db, org_id)
-    #
-    #     # Assign enum member directly, not .value string
-    #     org.status = OrganizationStatus.ACTIVE
-    #     org.action_by = admin_id
-    #
-    #     try:
-    #         await db.flush()
-    #         await db.refresh(org)
-    #     except IntegrityError:
-    #         await db.rollback()
-    #         raise AppException(
-    #             message=OrganizationMessages.DB_CONSTRAINT_APPROVE,
-    #             status_code=status.HTTP_409_CONFLICT,
-    #         )
-    #     except SQLAlchemyError:
-    #         await db.rollback()
-    #         raise AppException(
-    #             message=OrganizationMessages.DB_UNEXPECTED_APPROVAL,
-    #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-    #         )
-    #
-    #     return org
-    #
-    # async def reject_organization(self, db: AsyncSession, org_id: int, admin_id: int):
-    #     """
-    #     Helper method to explicitly reject an organization, setting its status to REJECTED.
-    #
-    #     Args:
-    #         db (AsyncSession): The active database session context.
-    #         org_id (int): The ID of the organization to reject.
-    #         admin_id (int): The ID of the super admin performing the rejection.
-    #
-    #     Returns:
-    #         Organization: The rejected organization instance.
-    #     """
-    #     org = await self.get_organization(db, org_id)
-    #
-    #     # Assign enum member directly, not .value string
-    #     org.status = OrganizationStatus.REJECTED
-    #     org.action_by = admin_id
-    #
-    #     try:
-    #         await db.flush()
-    #         await db.refresh(org)
-    #     except IntegrityError:
-    #         await db.rollback()
-    #         raise AppException(
-    #             message=OrganizationMessages.DB_CONSTRAINT_REJECT,
-    #             status_code=status.HTTP_409_CONFLICT,
-    #         )
-    #     except SQLAlchemyError:
-    #         await db.rollback()
-    #         raise AppException(
-    #             message=OrganizationMessages.DB_UNEXPECTED_REJECTION,
-    #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-    #         )
-    #     return org
-
     async def remove_organization(self, db: AsyncSession, org_id: int) -> None:
         """
         Permanently deletes an organization from the system.
@@ -247,6 +178,7 @@ class OrganizationService:
         org = await self.get_organization(db, org_id)
         try:
             await self.organization_repo.delete(db, org)
+            await db.flush()
         except IntegrityError:
             await db.rollback()
             raise AppException(

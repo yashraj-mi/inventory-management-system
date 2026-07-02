@@ -29,8 +29,6 @@ class OrganizationRepository:
             Organization: The created organization instance with its assigned ID.
         """
         db.add(organization)
-        await db.flush()
-        await db.refresh(organization)
         return organization
 
     async def get_by_id(
@@ -70,4 +68,3 @@ class OrganizationRepository:
             organization (Organization): The organization entity to delete.
         """
         await db.delete(organization)
-        await db.flush()

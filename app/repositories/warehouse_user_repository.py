@@ -67,7 +67,6 @@ class WarehouseUserRepository:
             WarehouseUsers: The inserted mapping entity.
         """
         db.add(assignment)
-        await db.flush()
         return assignment
 
     async def delete(self, db: AsyncSession, assignment: WarehouseUsers) -> None:
@@ -79,4 +78,3 @@ class WarehouseUserRepository:
             assignment (WarehouseUsers): The mapping entity to delete.
         """
         await db.delete(assignment)
-        await db.flush()

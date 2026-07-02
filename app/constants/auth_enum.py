@@ -20,6 +20,14 @@ class AuthMessages(str, Enum):
     INVALID_CREDENTIALS = "Incorrect email or password."
     INACTIVE_USER = "User account is not active."
     INACTIVE_ORG = "Organization account is not active."
+    INVALID_TOKEN = "Invalid token."
+    NO_PERMISSION = (
+        "Forbidden: You do not have permission to access another organization's data."
+    )
+    RESOURCE_ACCESS = "You do not have permission to access this resource"
+    DB_UNEXPECTED_UPDATE = (
+        "An unexpected error occurred while updating the authentication record."
+    )
 
     def format(self, **kwargs) -> str:
         """

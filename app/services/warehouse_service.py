@@ -82,7 +82,10 @@ class WarehouseService:
 
         warehouse_model = Warehouse(**warehouse_data.model_dump())
         try:
-            return await self.warehouse_repo.create(db, warehouse_model)
+            warehouse = await self.warehouse_repo.create(db, warehouse_model)
+            await db.flush()
+            await db.refresh(warehouse)
+            return warehouse
         except IntegrityError:
             await db.rollback()
             raise AppException(
@@ -168,7 +171,10 @@ class WarehouseService:
             setattr(warehouse, key, value)
 
         try:
-            return await self.warehouse_repo.update(db, warehouse)
+            warehouse = await self.warehouse_repo.update(db, warehouse)
+            await db.flush()
+            await db.refresh(warehouse)
+            return warehouse
         except IntegrityError:
             await db.rollback()
             raise AppException(
@@ -193,6 +199,7 @@ class WarehouseService:
         warehouse = await self.get_warehouse(db, warehouse_id)
         try:
             await self.warehouse_repo.delete(db, warehouse)
+            await db.flush()
         except IntegrityError:
             await db.rollback()
             raise AppException(

@@ -5,6 +5,7 @@ Provides core functionality and components for the auth_service domain.
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import SQLAlchemyError
 from fastapi import status
 from app.core.security import (
     PasswordManager,
@@ -93,7 +94,15 @@ class AuthService:
         refresh_token = create_refresh_token(data=token_data_payload)
 
         # Update the user's active connection metadata timestamp
-        await self.auth_repo.update_last_login(db=db, user=existing_user)
+        try:
+            await self.auth_repo.update_last_login(db=db, user=existing_user)
+            await db.flush()
+        except SQLAlchemyError:
+            await db.rollback()
+            raise AppException(
+                message=AuthMessages.DB_UNEXPECTED_UPDATE,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
         token_data = LoginResponse(
             access_token=access_token, refresh_token=refresh_token

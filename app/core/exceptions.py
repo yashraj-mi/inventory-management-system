@@ -5,6 +5,7 @@ Provides core functionality and components for the exceptions domain.
 """
 
 from typing import Any
+from fastapi import status
 
 
 class AppException(Exception):
@@ -17,7 +18,12 @@ class AppException(Exception):
         data (Any): Optional additional data related to the error.
     """
 
-    def __init__(self, message: str, status_code: int = 400, data: Any = None):
+    def __init__(
+        self,
+        message: str,
+        status_code: int = status.HTTP_400_BAD_REQUEST,
+        data: Any = None,
+    ):
         """
         Executes the __init__ operation.
 

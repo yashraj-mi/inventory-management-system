@@ -34,10 +34,12 @@ class CrudMessages(str, Enum):
     # --- Generalized Error Templates ---
     NOT_FOUND = "{module} with ID {id} not found."
     ALREADY_EXISTS = "{module} with this unique identifier already exists."
+    VALIDATION_FAILED = "Validation Failed"
 
     # --- Generalized DB Failures ---
     DB_CONSTRAINT = "Failed to process {module} due to a database constraint violation."
     DB_UNEXPECTED = "An unexpected database error occurred during {module} transaction."
+    INTERNAL_SERVER_ERROR = "An unexpected internal server error occurred."
 
     def format(self, module: str, **kwargs) -> str:
         """

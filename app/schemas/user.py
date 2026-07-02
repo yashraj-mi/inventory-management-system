@@ -20,7 +20,7 @@ class UserCreate(BaseModel):
     role: UserRole
 
     first_name: str = Field(..., min_length=2, max_length=100)
-    last_name: str = Field(..., min_length=2, max_length=100)
+    last_name: str | None = Field(default=None, min_length=2, max_length=100)
 
     email: EmailStr
 
@@ -73,7 +73,7 @@ class UserResponse(BaseModel):
     status: Status
 
     first_name: str
-    last_name: str
+    last_name: str | None
 
     email: EmailStr
 
