@@ -1,7 +1,7 @@
-"""
-warehouse.py module.
+"""Provide API endpoints for the Warehouse domain.
 
-Provides core functionality and components for the warehouse domain.
+This module defines routes for creating, listing, updating, and deleting
+warehouses, scoped to the organization hierarchy.
 """
 
 from fastapi import APIRouter, Depends, status
@@ -18,10 +18,13 @@ from app.schemas.warehouse import (
 from app.services.warehouse_service import WarehouseService
 from app.dependencies.auth import ALLOW_ORG_ADMIN, verify_tenant_access
 from app.core.security import get_current_user
-from app.constants.warehouse_enum import WarehouseMessages
+from app.constants.common_enum import CrudMessages
+from app.schemas.response import PaginatedData
+from app.dependencies.pagination import PaginationParams, get_pagination_params
+
+from app.dependencies.warehouse import get_warehouse_service
 
 router = APIRouter(prefix="/warehouses", tags=["Warehouses"])
-warehouse_service = WarehouseService()
 
 
 @router.post(
@@ -34,26 +37,34 @@ async def create_warehouse(
     warehouse_data: WarehouseCreate,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
+    service: WarehouseService = Depends(get_warehouse_service),
 ):
-    """
-    Creates a new warehouse.
+    """Create a new warehouse.
+
+    Executes a POST request to `/warehouses` to register a new storage facility.
 
     Args:
-        warehouse_data (WarehouseCreate): The warehouse payload.
-        db (AsyncSession): The active database session context.
+        warehouse_data (WarehouseCreate): The payload containing warehouse details.
+        db (AsyncSession): The asynchronous database session dependency.
+        current_user (dict): The authenticated user context.
+        service (WarehouseService): The warehouse service layer dependency.
+
+    Raises:
+        HTTPException (400): If the payload is invalid.
+        HTTPException (403): If the user lacks organization admin privileges.
 
     Returns:
-        StandardResponse[WarehouseResponse]: The created warehouse details.
+        StandardResponse[WarehouseResponse]: A standardized wrapper containing the newly created warehouse.
     """
     org_id = current_user.get("org_id")
     internal_data = WarehouseCreateInternal(
         **warehouse_data.model_dump(), organization_id=org_id
     )
-    result = await warehouse_service.create_warehouse(db, internal_data)
+    result = await service.create_warehouse(db, internal_data)
     warehouse = WarehouseResponse.model_validate(result)
     return StandardResponse(
         success=True,
-        message=WarehouseMessages.CREATED_SUCCESSFULLY,
+        message=CrudMessages.CREATE_SUCCESS.format(module="Warehouse"),
         data=warehouse,
     )
 
@@ -61,23 +72,86 @@ async def create_warehouse(
 @router.get(
     "",
     status_code=status.HTTP_200_OK,
-    response_model=StandardResponse[list[WarehouseResponse]],
+    response_model=StandardResponse[PaginatedData[WarehouseResponse]],
     dependencies=[Depends(ALLOW_ORG_ADMIN)],
 )
-async def get_all_warehouses(db: AsyncSession = Depends(get_db)):
-    """
-    Retrieves all warehouses.
+async def get_all_warehouses(
+    db: AsyncSession = Depends(get_db),
+    params: PaginationParams = Depends(get_pagination_params),
+    service: WarehouseService = Depends(get_warehouse_service),
+):
+    """Retrieve all warehouses.
+
+    Executes a GET request to `/warehouses` to fetch a paginated list of all warehouses globally.
 
     Args:
-        db (AsyncSession): The active database session context.
+        db (AsyncSession): The asynchronous database session dependency.
+        params (PaginationParams): Pagination parameters.
+        service (WarehouseService): The warehouse service layer dependency.
+
+    Raises:
+        HTTPException (403): If the user lacks proper admin privileges.
 
     Returns:
-        StandardResponse[list[WarehouseResponse]]: A list of all warehouses.
+        StandardResponse[PaginatedData[WarehouseResponse]]: A paginated list of all warehouses.
     """
-    items = await warehouse_service.get_all_warehouses(db)
+    items, total = await service.get_all_warehouses(db, params)
+    total_pages = (total + params.size - 1) // params.size
     data = [WarehouseResponse.model_validate(item) for item in items]
+    paginated = PaginatedData(
+        items=data, total=total, page=params.page, size=params.size, pages=total_pages
+    )
     return StandardResponse(
-        success=True, message=WarehouseMessages.LIST_RETRIEVED, data=data
+        success=True,
+        message=CrudMessages.READ_ALL_SUCCESS.format(module="Warehouse"),
+        data=paginated,
+    )
+
+
+@router.get(
+    "/organization/{organization_id}",
+    status_code=status.HTTP_200_OK,
+    response_model=StandardResponse[PaginatedData[WarehouseResponse]],
+    dependencies=[Depends(ALLOW_ORG_ADMIN)],
+)
+async def get_organization_warehouses(
+    organization_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+    params: PaginationParams = Depends(get_pagination_params),
+    service: WarehouseService = Depends(get_warehouse_service),
+):
+    """Retrieve all warehouses belonging to a specific organization.
+
+    Executes a GET request to `/warehouses/organization/{organization_id}`.
+
+    Args:
+        organization_id (int): The unique ID of the organization.
+        db (AsyncSession): The asynchronous database session dependency.
+        current_user (dict): The authenticated user context.
+        params (PaginationParams): Pagination parameters.
+        service (WarehouseService): The warehouse service layer dependency.
+
+    Raises:
+        HTTPException (403): If the user lacks access to the organization.
+        HTTPException (404): If the organization does not exist.
+
+    Returns:
+        StandardResponse[PaginatedData[WarehouseResponse]]: A paginated list of warehouses.
+    """
+    verify_tenant_access(current_user, organization_id)
+    items, total = await service.get_by_organization(
+        organization_id=organization_id, db=db, params=params
+    )
+    total_pages = (total + params.size - 1) // params.size
+    data = [WarehouseResponse.model_validate(w) for w in items]
+    paginated = PaginatedData(
+        items=data, total=total, page=params.page, size=params.size, pages=total_pages
+    )
+    return StandardResponse(
+        success=True,
+        message=CrudMessages.ORG_DATA_RETRIEVED.format(module="Warehouses"),
+        data=paginated,
     )
 
 
@@ -91,23 +165,31 @@ async def get_warehouse_by_id(
     warehouse_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
+    service: WarehouseService = Depends(get_warehouse_service),
 ):
-    """
-    Retrieves a warehouse by its ID.
+    """Retrieve a warehouse by its ID.
+
+    Executes a GET request to `/warehouses/{warehouse_id}`.
 
     Args:
-        warehouse_id (int): The ID of the warehouse.
-        db (AsyncSession): The active database session context.
+        warehouse_id (int): The unique ID of the warehouse.
+        db (AsyncSession): The asynchronous database session dependency.
+        current_user (dict): The authenticated user context.
+        service (WarehouseService): The warehouse service layer dependency.
+
+    Raises:
+        HTTPException (403): If the user lacks access to the warehouse's organization.
+        HTTPException (404): If the warehouse does not exist.
 
     Returns:
-        StandardResponse[WarehouseResponse]: The requested warehouse details.
+        StandardResponse[WarehouseResponse]: A standardized wrapper containing the warehouse details.
     """
-    result = await warehouse_service.get_warehouse(db, warehouse_id)
+    result = await service.get_warehouse(db, warehouse_id)
     verify_tenant_access(current_user, result.organization_id)
     warehouse = WarehouseResponse.model_validate(result)
     return StandardResponse(
         success=True,
-        message=WarehouseMessages.DETAILS_RETRIEVED,
+        message=CrudMessages.READ_ONE_SUCCESS.format(module="Warehouse"),
         data=warehouse,
     )
 
@@ -123,25 +205,34 @@ async def update_warehouse(
     update_data: WarehouseUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
+    service: WarehouseService = Depends(get_warehouse_service),
 ):
-    """
-    Updates an existing warehouse.
+    """Update an existing warehouse.
+
+    Executes a PATCH request to `/warehouses/{warehouse_id}`.
 
     Args:
-        warehouse_id (int): The ID of the warehouse to update.
+        warehouse_id (int): The unique ID of the warehouse to update.
         update_data (WarehouseUpdate): Payload with fields to update.
-        db (AsyncSession): The active database session context.
+        db (AsyncSession): The asynchronous database session dependency.
+        current_user (dict): The authenticated user context.
+        service (WarehouseService): The warehouse service layer dependency.
+
+    Raises:
+        HTTPException (400): If the update payload is invalid.
+        HTTPException (403): If the user lacks access to the warehouse's organization.
+        HTTPException (404): If the warehouse does not exist.
 
     Returns:
-        StandardResponse[WarehouseResponse]: The updated warehouse details.
+        StandardResponse[WarehouseResponse]: A standardized wrapper containing the updated warehouse.
     """
-    existing_warehouse = await warehouse_service.get_warehouse(db, warehouse_id)
+    existing_warehouse = await service.get_warehouse(db, warehouse_id)
     verify_tenant_access(current_user, existing_warehouse.organization_id)
-    result = await warehouse_service.update_warehouse(db, warehouse_id, update_data)
+    result = await service.update_warehouse(db, warehouse_id, update_data)
     warehouse = WarehouseResponse.model_validate(result)
     return StandardResponse(
         success=True,
-        message=WarehouseMessages.UPDATED_SUCCESSFULLY,
+        message=CrudMessages.UPDATE_SUCCESS.format(module="Warehouse"),
         data=warehouse,
     )
 
@@ -156,52 +247,31 @@ async def delete_warehouse(
     warehouse_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
+    service: WarehouseService = Depends(get_warehouse_service),
 ):
-    """
-    Deletes a warehouse by ID.
+    """Delete a warehouse by ID.
+
+    Executes a DELETE request to `/warehouses/{warehouse_id}`.
 
     Args:
-        warehouse_id (int): The ID of the warehouse to delete.
-        db (AsyncSession): The active database session context.
+        warehouse_id (int): The unique ID of the warehouse to delete.
+        db (AsyncSession): The asynchronous database session dependency.
+        current_user (dict): The authenticated user context.
+        service (WarehouseService): The warehouse service layer dependency.
+
+    Raises:
+        HTTPException (400): If the warehouse cannot be deleted.
+        HTTPException (403): If the user lacks access to the warehouse's organization.
+        HTTPException (404): If the warehouse does not exist.
 
     Returns:
-        StandardResponse[None]: Success message.
+        StandardResponse[None]: A standardized wrapper indicating successful deletion.
     """
-    existing_warehouse = await warehouse_service.get_warehouse(db, warehouse_id)
+    existing_warehouse = await service.get_warehouse(db, warehouse_id)
     verify_tenant_access(current_user, existing_warehouse.organization_id)
-    await warehouse_service.delete_warehouse(db, warehouse_id)
-    return StandardResponse(
-        success=True, message=WarehouseMessages.DELETED_SUCCESSFULLY, data=None
-    )
-
-
-@router.get(
-    "/organization/{organization_id}",
-    status_code=status.HTTP_200_OK,
-    response_model=StandardResponse[list[WarehouseResponse]],
-    dependencies=[Depends(ALLOW_ORG_ADMIN)],
-)
-async def get_organization_warehouses(
-    organization_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
-):
-    """
-    Retrieves all warehouses belonging to a specific organization.
-
-    Args:
-        organization_id (int): The ID of the organization.
-        db (AsyncSession): The active database session context.
-
-    Returns:
-        StandardResponse[list[WarehouseResponse]]: A list of warehouses.
-    """
-    verify_tenant_access(current_user, organization_id)
-    warehouses = await warehouse_service.get_by_organization(
-        organization_id=organization_id, db=db
-    )
+    await service.delete_warehouse(db, warehouse_id)
     return StandardResponse(
         success=True,
-        message=WarehouseMessages.ORG_WAREHOUSES_RETRIEVED,
-        data=[WarehouseResponse.model_validate(w) for w in warehouses],
+        message=CrudMessages.DELETE_SUCCESS.format(module="Warehouse"),
+        data=None,
     )

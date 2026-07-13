@@ -1,36 +1,38 @@
 """
-organization.py module.
+Define the database model for organizations.
 
-Provides core functionality and components for the organization domain.
+Acts as the root tenant entity in the multi-tenant architecture, grouping all
+users, warehouses, products, and transactions under a single business account.
 """
 
 from __future__ import annotations
 from typing import TYPE_CHECKING, Optional
 from sqlalchemy import ForeignKey, Enum
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.constants.organization_enum import OrganizationStatus
 from .base import BaseModel
 
 if TYPE_CHECKING:
-    pass
+    from app.db.models.user import User
 
 
 class Organization(BaseModel):
     """
-    SQLAlchemy model representing an Organization in the system.
+    Represent a top-level tenant or business entity.
 
-    Organizations are the top-level tenant in the multi-tenant architecture.
-    Users and Warehouses are tied to a specific Organization. Newly registered
-    organizations start in a PENDING status until approved by a super admin.
+    Organizations encapsulate all operational data for a specific client business.
+    Newly registered organizations begin in a PENDING state and require super admin
+    approval before they can perform any inventory actions.
 
     Attributes:
-        name (str): Unique name of the organization.
-        email (str): Unique contact email for the organization.
-        phone (str): Contact phone number.
-        address (str): Physical or mailing address.
-        status (OrganizationStatus): Current status (PENDING, ACTIVE, REJECTED).
-        action_by (int, optional): ID of the super admin who approved/rejected the request.
+        name (str): The unique, human-readable name of the business entity.
+        email (str): The unique primary contact email for the organization.
+        phone (str): The primary contact phone number.
+        address (str): The physical headquarters or primary mailing address.
+        status (OrganizationStatus): The current operational state (e.g., PENDING, ACTIVE).
+        action_by (int | None): The ID of the super admin user who approved or rejected the registration.
+        users (list[User]): The collection of users associated with this organization.
     """
 
     __tablename__ = "organizations"
@@ -45,5 +47,9 @@ class Organization(BaseModel):
         default=OrganizationStatus.PENDING,
     )
     action_by: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("users.id"), nullable=True
+        ForeignKey("users.id", use_alter=True), nullable=True, index=True
+    )
+
+    users: Mapped[list["User"]] = relationship(
+        "User", back_populates="organization", foreign_keys="[User.organization_id]"
     )

@@ -1,7 +1,8 @@
 """
-user_service.py module.
+User service for identity and access management.
 
-Provides core functionality and components for the user_service domain.
+Manages user creation (including secure password hashing), profile updates,
+role assignments, and tenant-scoped user queries.
 """
 
 from collections.abc import Sequence
@@ -14,7 +15,11 @@ from app.schemas.user import UserCreateInternal, UserUpdate
 from app.core.security import PasswordManager
 from app.core.exceptions import AppException
 from app.repositories.organization_repository import OrganizationRepository
-from app.constants.user_enum import UserMessages
+from app.constants.common_enum import CrudMessages
+from app.dependencies.pagination import PaginationParams
+
+
+from app.core.profiling import log_timing
 
 
 class UserService:
@@ -23,19 +28,20 @@ class UserService:
     business rule validation, and transaction orchestrations for Users.
     """
 
-    def __init__(self, user_repo: UserRepository | None = None) -> None:
+    def __init__(
+        self, user_repo: UserRepository, org_repo: OrganizationRepository
+    ) -> None:
         """
-        Executes the __init__ operation.
+        Initialize the UserService with required repositories.
 
         Args:
-            user_repo: Parameter description.
-
-        Returns:
-            Execution result.
+            user_repo: Data access layer for user queries and persistence.
+            org_repo: Data access layer for organization existence validation.
         """
-        self.user_repo = user_repo or UserRepository()
-        self.org_repo = OrganizationRepository()
+        self.user_repo = user_repo
+        self.org_repo = org_repo
 
+    @log_timing
     async def create_user(self, db: AsyncSession, payload: UserCreateInternal) -> User:
         """
         Orchestrates user creation flow, including password hashing and session commit.
@@ -53,7 +59,9 @@ class UserService:
         existing_user = await self.user_repo.get_by_email(db, payload.email)
         if existing_user:
             raise AppException(
-                message=UserMessages.ALREADY_EXISTS.format(email=payload.email),
+                message=CrudMessages.ALREADY_EXISTS_FIELD.format(
+                    module="User", field="email", value=payload.email
+                ),
                 status_code=status.HTTP_409_CONFLICT,
             )
 
@@ -74,17 +82,22 @@ class UserService:
         except IntegrityError:
             await db.rollback()
             raise AppException(
-                message=UserMessages.ALREADY_EXISTS.format(email=payload.email),
+                message=CrudMessages.ALREADY_EXISTS_FIELD.format(
+                    module="User", field="email", value=payload.email
+                ),
                 status_code=status.HTTP_409_CONFLICT,
             )
         except SQLAlchemyError:
             await db.rollback()
             raise AppException(
-                message=UserMessages.DB_UNEXPECTED_CREATION,
+                message=CrudMessages.DB_UNEXPECTED.format(
+                    module="User", action="creation"
+                ),
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         return user
 
+    @log_timing
     async def update_user(
         self, db: AsyncSession, user_id: int, payload: UserUpdate
     ) -> User:
@@ -111,24 +124,30 @@ class UserService:
         except IntegrityError:
             await db.rollback()
             raise AppException(
-                message=UserMessages.DB_CONSTRAINT_VIOLATION,
+                message=CrudMessages.DB_CONSTRAINT.format(module="User"),
                 status_code=status.HTTP_409_CONFLICT,
             )
         except SQLAlchemyError:
             await db.rollback()
             raise AppException(
-                message=UserMessages.DB_UNEXPECTED_UPDATE,
+                message=CrudMessages.DB_UNEXPECTED.format(
+                    module="User", action="update"
+                ),
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         return user
 
+    @log_timing
     async def delete_user(self, db: AsyncSession, user_id: int) -> None:
         """
-        Validates record scope existence and drops the target user data entry.
+        Delete a user entity from the system.
+
+        Validates the user exists before dropping. Enforces relational constraints
+        if the user is associated with active orders, transactions, or logs.
 
         Args:
-            db (AsyncSession): The active database session context.
-            user_id (int): The ID of the user to delete.
+            db: The active database session context.
+            user_id: The ID of the user to delete.
         """
         user = await self.get_user(db=db, user_id=user_id)
 
@@ -138,17 +157,22 @@ class UserService:
         except IntegrityError:
             await db.rollback()
             raise AppException(
-                message=UserMessages.DB_RELATIONAL_CONSTRAINTS,
+                message=CrudMessages.DB_RELATIONAL_CONSTRAINT.format(module="User"),
                 status_code=status.HTTP_409_CONFLICT,
             )
         except SQLAlchemyError:
             await db.rollback()
             raise AppException(
-                message=UserMessages.DB_UNEXPECTED_DELETION,
+                message=CrudMessages.DB_UNEXPECTED.format(
+                    module="User", action="deletion"
+                ),
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-    async def get_all_users(self, db: AsyncSession) -> Sequence[User]:
+    @log_timing
+    async def get_all_users(
+        self, db: AsyncSession, params: PaginationParams
+    ) -> tuple[Sequence[User], int]:
         """
         Retrieves all users from the system.
 
@@ -158,8 +182,9 @@ class UserService:
         Returns:
             Sequence[User]: A sequence of all users.
         """
-        return await self.user_repo.get_all(db)
+        return await self.user_repo.get_all(db, params)
 
+    @log_timing
     async def get_user(self, db: AsyncSession, user_id: int) -> User:
         """
         Retrieves a specific user by ID, raising a 404 if not found.
@@ -177,36 +202,37 @@ class UserService:
         user = await self.user_repo.get_by_id(db=db, user_id=user_id)
         if not user:
             raise AppException(
-                message=UserMessages.NOT_FOUND.format(user_id=user_id),
+                message=CrudMessages.NOT_FOUND.format(module="User"),
                 status_code=status.HTTP_404_NOT_FOUND,
             )
         return user
 
-    async def get_org_users(self, db: AsyncSession, org_id: int) -> list[User]:
+    @log_timing
+    async def get_org_users(
+        self, db: AsyncSession, org_id: int, params: PaginationParams
+    ) -> tuple[Sequence[User], int]:
         """
-        Validates target entity integrity bounds and fetches the complete list
-        of users belonging to the corporate organization matching the org_id.
+        Retrieve all active users scoped to a specific organization.
 
         Args:
-            db (AsyncSession): Active database transactional session context.
-            org_id (int): Primary tracking key matching the organizational record profile.
+            db: Active database transactional session context.
+            org_id: Organization ID to filter users by.
+            params: Pagination parameters.
 
         Raises:
-            AppException: HTTP 404 error if the specified organization footprint
-                          is missing or unverified inside the system.
+            AppException: If the organization does not exist (404).
 
         Returns:
-            list[User]: A type-converted list containing matching user profile system records.
+            A tuple of user sequences and total count.
         """
         # 1. Structural Validation - Verify the organization partition exists first
 
         organization_exists = await self.org_repo.get_by_id(db, organization_id=org_id)
         if not organization_exists:
             raise AppException(
-                message=UserMessages.ORG_NOT_FOUND.format(org_id=org_id),
+                message=CrudMessages.ORG_NOT_FOUND.format(module="User"),
                 status_code=status.HTTP_404_NOT_FOUND,
             )
 
         # 2. Extract collection matching target database elements safely
-        user_data = await self.user_repo.get_org_users(db=db, org_id=org_id)
-        return list(user_data)
+        return await self.user_repo.get_org_users(db=db, org_id=org_id, params=params)

@@ -1,6 +1,6 @@
-"""
-__init__.py module.
+"""Initialize the constants module.
 
-Provides core functionality and components for the __init__ domain.
+This module exposes core enumerations, status flags, and standardized messages
+used across the Inventory Management System for consistent domain logic.
 """
 # Package marker

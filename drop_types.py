@@ -5,7 +5,7 @@ from app.core.database import engine
 
 async def drop_enum_types():
     print("Dropping residual ENUM types from PostgreSQL...")
-    types_to_drop = ["organizationstatus", "userrole", "status", "warehousestatus"]
+    types_to_drop = ["sales_order_status"]
 
     async with engine.begin() as conn:
         for enum_type in types_to_drop:

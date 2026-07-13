@@ -1,39 +1,34 @@
-"""
-warehouse_user_enum.py module.
+"""Define standard messages for warehouse user assignments.
 
-Provides core functionality and components for the warehouse_user_enum domain.
+Provides consistent feedback strings for actions linking or unlinking
+staff members and managers to specific warehouse locations.
 """
 
 from enum import Enum
 
 
 class WarehouseUserMessages(str, Enum):
-    # --- Success Response Messages (Router Layer) ---
-    """
-    Represents the WarehouseUserMessages component.
+    """Represent standard messages for warehouse user association operations.
+
+    Used when assigning, removing, or retrieving personnel associated with
+    a particular physical warehouse.
     """
 
+    # --- Success Response Messages (Router Layer) ---
     ASSIGNED_SUCCESSFULLY = "User successfully assigned to the warehouse."
     REMOVED_SUCCESSFULLY = "User successfully removed from the warehouse."
     LIST_RETRIEVED = "Successfully retrieved users assigned to the warehouse."
 
     # --- Error Response Messages (Service Layer) ---
     ALREADY_ASSIGNED = "User is already assigned to this warehouse."
-    NOT_FOUND = "Assignment mapping record not found."
-
-    # --- Database Transaction Failures ---
-    DB_RELATIONAL_CONSTRAINTS = (
-        "Cannot remove assignment due to existing relational constraints."
-    )
-    DB_UNEXPECTED_ASSIGNMENT = (
-        "An unexpected database error occurred during warehouse assignment."
-    )
-    DB_UNEXPECTED_REMOVAL = (
-        "An unexpected database error occurred during assignment removal."
-    )
 
     def format(self, **kwargs) -> str:
-        """
-        Dynamically inject context variables into the enum message string.
+        """Inject context variables dynamically into the message string.
+
+        Args:
+            **kwargs: Dynamic variables to interpolate into the string.
+
+        Returns:
+            str: The formatted message string.
         """
         return self.value.format(**kwargs)

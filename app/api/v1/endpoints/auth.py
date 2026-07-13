@@ -1,7 +1,7 @@
-"""
-auth.py module.
+"""Provide authentication endpoints for user login and token management.
 
-Provides core functionality and components for the auth domain.
+This module defines routes for verifying user credentials, generating tokens, and
+refreshing access tokens using FastAPI's dependency injection system.
 """
 
 from fastapi import APIRouter, Depends, status
@@ -13,17 +13,10 @@ from app.schemas.response import StandardResponse
 from app.services.auth_service import AuthService
 from app.constants.auth_enum import AuthMessages
 
+from app.dependencies.auth import get_auth_service
+
 # Initialize the router with a dedicated prefix and documentation tags
 router = APIRouter(prefix="/auth", tags=["Authentication"])
-
-
-def get_auth_service() -> AuthService:
-    """Dependency provider factory to instantiate the AuthService layer.
-
-    Returns:
-        AuthService: An instance of the authentication business logic service.
-    """
-    return AuthService()
 
 
 @router.post(
@@ -39,16 +32,23 @@ async def login(
     db: AsyncSession = Depends(get_db),
     service: AuthService = Depends(get_auth_service),
 ) -> StandardResponse[LoginResponse]:
-    """
-    Handles secure user login operations.
+    """Authenticate a user and return login tokens.
+
+    Executes a POST request to `/auth/login` to verify the provided email and password.
+    If valid, returns an access token and user information.
 
     Args:
-        payload (UserLogin): The incoming data transfer object containing the user's email and password.
-        db (AsyncSession): The asynchronous database session dependency.
-        service (AuthService): The authentication service layer orchestrator.
+        payload (UserLogin): The incoming request payload containing the user's email and password.
+        db (AsyncSession): The asynchronous database session dependency injected by `get_db`.
+        service (AuthService): The authentication service layer orchestrator injected by `get_auth_service`.
+
+    Raises:
+        HTTPException (400): If the credentials are invalid.
+        HTTPException (403): If the user account is disabled or locked.
+        HTTPException (404): If the user does not exist.
 
     Returns:
-        StandardResponse[LoginResponse]: A standardized envelope containing the authenticated user's access tokens.
+        StandardResponse[LoginResponse]: A standardized envelope containing the authenticated user's access tokens and profile.
     """
     # Delegate the credential verification logic to the service layer
     authenticated_user = await service.login(payload=payload, db=db)
@@ -71,25 +71,21 @@ async def login(
 async def refresh_access_token(
     body: Token, service: AuthService = Depends(get_auth_service)
 ) -> StandardResponse[TokenResponse]:
-    """
-    Generate a new access token using a valid refresh token.
+    """Refresh a user's access token using a valid refresh token.
 
-    This endpoint validates the provided refresh token and issues
-    a new access token without requiring the user to log in again.
+    Executes a POST request to `/auth/refresh-access-token` to validate the refresh
+    token and issue a new access token without requiring a full login.
 
     Args:
-        body (Token):
-            Request payload containing the refresh token.
+        body (Token): The request payload containing the current refresh token.
+        service (AuthService): The authentication service dependency injected by `get_auth_service`.
 
-        service (AuthService):
-            Authentication service dependency responsible for
-            validating the refresh token and generating a new
-            access token.
+    Raises:
+        HTTPException (400): If the provided refresh token is malformed.
+        HTTPException (401): If the refresh token is invalid or expired.
 
     Returns:
-        StandardResponse[TokenResponse]:
-            Standard API response containing the newly generated
-            access token.
+        StandardResponse[TokenResponse]: A standard API response containing the newly generated access token.
     """
     new_access_token = await service.refresh_token(body.token)
     return StandardResponse(

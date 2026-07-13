@@ -1,32 +1,37 @@
-"""
-organization_repository.py module.
+"""Manage database interactions for organizations.
 
-Provides core functionality and components for the organization_repository domain.
+This module encapsulates data access for the Organization model, representing
+top-level tenants in the multi-tenant architecture. It handles queries for
+creating and fetching root organizational records.
 """
 
 from typing import Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from app.db.models.organization import Organization
+from app.dependencies.pagination import PaginationParams
+from app.repositories.base import paginate_query
 
 
 class OrganizationRepository:
-    """
-    Repository layer for managing Organization entities in the database.
+    """Manage data access for Organization entities.
+
+    This repository performs CRUD operations on the top-level Organization
+    model. It is central to tenant isolation since most other models link
+    back to an organization.
     """
 
     async def create(
         self, db: AsyncSession, organization: Organization
     ) -> Organization:
-        """
-        Creates a new organization record in the database.
+        """Stage a new organization record for insertion into the database.
 
         Args:
-            db (AsyncSession): The active database session context.
+            db (AsyncSession): The active asynchronous database session.
             organization (Organization): The organization entity to create.
 
         Returns:
-            Organization: The created organization instance with its assigned ID.
+            Organization: The staged organization instance.
         """
         db.add(organization)
         return organization
@@ -34,37 +39,50 @@ class OrganizationRepository:
     async def get_by_id(
         self, db: AsyncSession, organization_id: int
     ) -> Organization | None:
-        """
-        Retrieves a single organization by its primary key.
+        """Fetch a specific organization by its primary key.
 
         Args:
-            db (AsyncSession): The active database session context.
-            organization_id (int): The ID of the organization to fetch.
+            db (AsyncSession): The active asynchronous database session.
+            organization_id (int): The unique identifier of the organization.
 
         Returns:
-            Organization | None: The found organization, or None if it doesn't exist.
+            Organization | None: The requested organization, or None if not found.
+
+        Raises:
+            SQLAlchemyError: If the database operation fails.
         """
         return await db.get(Organization, organization_id)
 
-    async def get_all(self, db: AsyncSession) -> Sequence[Organization]:
-        """
-        Retrieves a paginated list of all organizations.
+    async def get_all(
+        self, db: AsyncSession, params: PaginationParams
+    ) -> tuple[Sequence[Organization], int]:
+        """Fetch a paginated list of all active organizations.
+
+        Used typically by super-admin roles to review all registered tenants
+        across the platform.
 
         Args:
-            db (AsyncSession): The active database session context.
+            db (AsyncSession): The active asynchronous database session.
+            params (PaginationParams): Pagination constraints (offset/limit).
 
         Returns:
-            Sequence[Organization]: A sequence of Organization instances.
+            tuple[Sequence[Organization], int]: The fetched organizations and total count.
+
+        Raises:
+            SQLAlchemyError: If the database operation fails.
         """
-        result = await db.execute(select(Organization))
-        return result.scalars().all()
+        query = select(Organization).order_by(Organization.id)
+        items, total = await paginate_query(db, query, params)
+        return items, total
 
     async def delete(self, db: AsyncSession, organization: Organization) -> None:
-        """
-        Deletes an organization record from the database.
+        """Stage an organization record for deletion from the database.
 
         Args:
-            db (AsyncSession): The active database session context.
-            organization (Organization): The organization entity to delete.
+            db (AsyncSession): The active asynchronous database session.
+            organization (Organization): The organization entity to remove.
+
+        Raises:
+            SQLAlchemyError: If the database operation fails.
         """
         await db.delete(organization)

@@ -1,73 +1,91 @@
-"""
-warehouse_repository.py module.
+"""Manage database interactions for physical warehouse locations.
 
-Provides core functionality and components for the warehouse_repository domain.
+This module provides the WarehouseRepository, handling data access for warehouse
+definitions, tracking locations where inventory is stored, shipped, and received.
 """
 
 from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.warehouse import Warehouse
+from app.dependencies.pagination import PaginationParams
+from app.repositories.base import paginate_query
 
 
 class WarehouseRepository:
-    """
-    Repository layer for managing Warehouse entities in the database.
+    """Manage data access for Warehouse entities.
+
+    Facilitates querying warehouse facilities, providing tenant isolation
+    by filtering on organization ID.
     """
 
     async def create(self, db: AsyncSession, warehouse: Warehouse) -> Warehouse:
-        """
-        Creates a new warehouse record in the database.
+        """Stage a new warehouse record for database insertion.
 
         Args:
-            db (AsyncSession): The active database session context.
+            db (AsyncSession): The active asynchronous database session.
             warehouse (Warehouse): The warehouse entity to create.
 
         Returns:
-            Warehouse: The created warehouse instance with its assigned ID.
+            Warehouse: The staged warehouse instance.
         """
         db.add(warehouse)
         return warehouse
 
-    async def get_all(self, db: AsyncSession) -> list[Warehouse]:
-        """
-        Retrieves all warehouse records from the database.
+    async def get_all(
+        self, db: AsyncSession, params: PaginationParams
+    ) -> tuple[Sequence[Warehouse], int]:
+        """Fetch a paginated list of all system warehouses globally.
+
+        Primarily used by super-admin roles to audit warehouse usage across
+        all platform organizations.
 
         Args:
-            db (AsyncSession): The active database session context.
+            db (AsyncSession): The active asynchronous database session.
+            params (PaginationParams): Pagination constraints (offset/limit).
 
         Returns:
-            list[Warehouse]: A list of all warehouses.
-        """
-        result = await db.scalars(select(Warehouse))
-        return list(result.all())
+            tuple[Sequence[Warehouse], int]: The fetched warehouses and total count.
 
-    async def get(self, db: AsyncSession, warehouse_id: int) -> Warehouse | None:
+        Raises:
+            SQLAlchemyError: If the database operation fails.
         """
-        Retrieves a single warehouse by its primary key.
+        query = select(Warehouse)
+        return await paginate_query(db, query, params)
+
+    async def get_by_id(self, db: AsyncSession, warehouse_id: int) -> Warehouse | None:
+        """Fetch a specific warehouse by its primary key.
 
         Args:
-            db (AsyncSession): The active database session context.
-            warehouse_id (int): The ID of the warehouse to fetch.
+            db (AsyncSession): The active asynchronous database session.
+            warehouse_id (int): The unique identifier of the warehouse.
 
         Returns:
-            Warehouse | None: The found warehouse, or None if it doesn't exist.
+            Warehouse | None: The requested warehouse, or None if not found.
+
+        Raises:
+            SQLAlchemyError: If the database operation fails.
         """
         return await db.get(Warehouse, warehouse_id)
 
     async def get_by_code(
         self, db: AsyncSession, organization_id: int, code: str
     ) -> Warehouse | None:
-        """
-        Retrieves a warehouse by its organization ID and unique code.
+        """Fetch a warehouse by its unique code within an organization.
+
+        Ensures code uniqueness per organization and allows quick facility
+        lookups via external integration keys.
 
         Args:
-            db (AsyncSession): The active database session context.
+            db (AsyncSession): The active asynchronous database session.
             organization_id (int): The ID of the parent organization.
-            code (str): The unique code of the warehouse.
+            code (str): The specific warehouse code.
 
         Returns:
-            Warehouse | None: The found warehouse, or None if not found.
+            Warehouse | None: The matching warehouse, or None if not found.
+
+        Raises:
+            SQLAlchemyError: If the database operation fails.
         """
         stmt = select(Warehouse).where(
             Warehouse.organization_id == organization_id, Warehouse.code == code
@@ -76,28 +94,32 @@ class WarehouseRepository:
         return result.scalar_one_or_none()
 
     async def get_by_organization(
-        self, db: AsyncSession, organization_id: int
-    ) -> Sequence[Warehouse] | None:
-        """
-        Retrieves all warehouses belonging to a specific organization.
+        self, db: AsyncSession, organization_id: int, params: PaginationParams
+    ) -> tuple[Sequence[Warehouse], int]:
+        """Fetch a paginated list of warehouses scoped to a specific organization.
+
+        Enforces tenant isolation by retrieving only the facilities belonging
+        to the specified organization.
 
         Args:
-            db (AsyncSession): The active database session context.
+            db (AsyncSession): The active asynchronous database session.
             organization_id (int): The ID of the parent organization.
+            params (PaginationParams): Pagination constraints (offset/limit).
 
         Returns:
-            Sequence[Warehouse] | None: A sequence of warehouses, or None if none exist.
+            tuple[Sequence[Warehouse], int]: The fetched warehouses and total count.
+
+        Raises:
+            SQLAlchemyError: If the database operation fails.
         """
-        stmt = select(Warehouse).where(Warehouse.organization_id == organization_id)
-        result = await db.execute(stmt)
-        return result.scalars().all()
+        query = select(Warehouse).where(Warehouse.organization_id == organization_id)
+        return await paginate_query(db, query, params)
 
     async def update(self, db: AsyncSession, warehouse: Warehouse) -> Warehouse:
-        """
-        Commits updates made to a tracked warehouse instance.
+        """Process updates for an existing warehouse record.
 
         Args:
-            db (AsyncSession): The active database session context.
+            db (AsyncSession): The active asynchronous database session.
             warehouse (Warehouse): The warehouse entity to update.
 
         Returns:
@@ -106,11 +128,13 @@ class WarehouseRepository:
         return warehouse
 
     async def delete(self, db: AsyncSession, warehouse: Warehouse) -> None:
-        """
-        Deletes a warehouse record from the database.
+        """Stage a warehouse record for deletion from the database.
 
         Args:
-            db (AsyncSession): The active database session context.
+            db (AsyncSession): The active asynchronous database session.
             warehouse (Warehouse): The warehouse entity to delete.
+
+        Raises:
+            SQLAlchemyError: If the database operation fails.
         """
         await db.delete(warehouse)

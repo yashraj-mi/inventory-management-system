@@ -1,7 +1,7 @@
-"""
-users.py module.
+"""Provide API endpoints for the User domain.
 
-Provides core functionality and components for the users domain.
+This module defines routes for user creation, retrieval, updating, and deletion,
+along with context-based organization scoping.
 """
 
 from fastapi import APIRouter, Depends, Path, status, BackgroundTasks
@@ -22,19 +22,12 @@ from app.dependencies.auth import (
 )
 from app.constants.common_enum import CrudMessages
 from app.core.security import get_current_user
-from app.constants.user_enum import UserMessages
+from app.schemas.response import PaginatedData
+from app.dependencies.pagination import PaginationParams, get_pagination_params
+
+from app.dependencies.user import get_user_service
 
 router = APIRouter(prefix="/users", tags=["Users"])
-
-
-def get_user_service() -> UserService:
-    """
-    Dependency provider factory to instantiate the UserService layer.
-
-    Returns:
-        UserService: An instance of the user business logic service.
-    """
-    return UserService()
 
 
 @router.post(
@@ -53,22 +46,26 @@ async def create_user(
     service: UserService = Depends(get_user_service),
     current_user: dict = Depends(get_current_user),
 ) -> StandardResponse[UserResponse]:
-    """
-    Creates a new user in the system.
+    """Create a new user in the system.
+
+    Executes a POST request to `/users` to register a new user under the current organization.
 
     Args:
         payload (UserCreate): The registration payload containing user details.
         background_tasks (BackgroundTasks): Background tasks for email dispatch.
-        db (AsyncSession): The active database session context.
-        service (UserService): The user service layer.
-        current_user: get current logged_in user's details.
+        db (AsyncSession): The asynchronous database session dependency.
+        service (UserService): The user service layer dependency.
+        current_user (dict): The authenticated user context.
+
+    Raises:
+        HTTPException (400): If the email is already in use.
+        HTTPException (403): If the user lacks admin privileges.
 
     Returns:
-        StandardResponse[UserResponse]: A standardized response containing the created user.
+        StandardResponse[UserResponse]: A standardized wrapper containing the created user.
     """
     org_id = current_user.get("org_id")
     temp_password = secrets.token_urlsafe(16)
-
     internal_payload = UserCreateInternal(
         **payload.model_dump(), organization_id=org_id, password=temp_password
     )
@@ -92,7 +89,7 @@ async def create_user(
 
 @router.get(
     "",
-    response_model=StandardResponse[list[UserResponse]],
+    response_model=StandardResponse[PaginatedData[UserResponse]],
     status_code=status.HTTP_200_OK,
     summary="Get All Users",
     description="Retrieve all users from the system.",
@@ -100,58 +97,98 @@ async def create_user(
     dependencies=[Depends(ALLOW_SUPER_ADMIN)],
 )
 async def get_all_users(
-    db: AsyncSession = Depends(get_db), service: UserService = Depends(get_user_service)
-) -> StandardResponse[list[UserResponse]]:
-    """
-    Retrieves all users from the system.
+    db: AsyncSession = Depends(get_db),
+    service: UserService = Depends(get_user_service),
+    params: PaginationParams = Depends(get_pagination_params),
+):
+    """Retrieve a paginated list of all users from the system.
+
+    Executes a GET request to `/users` to fetch globally registered users.
 
     Args:
-        db (AsyncSession): The active database session context.
-        service (UserService): The user service layer.
+        db (AsyncSession): The asynchronous database session dependency.
+        service (UserService): The user service layer dependency.
+        params (PaginationParams): Pagination parameters.
+
+    Raises:
+        HTTPException (403): If the user lacks super admin privileges.
 
     Returns:
-        StandardResponse[list[UserResponse]]: A list of all users.
+        StandardResponse[PaginatedData[UserResponse]]: A paginated list of all users.
     """
-    users = await service.get_all_users(db)
+    users, total = await service.get_all_users(db, params)
+    total_pages = (total + params.size - 1) // params.size
     # Convert Sequence elements cleanly into Pydantic representations
     validated_users = [UserResponse.model_validate(u) for u in users]
+    data = PaginatedData(
+        items=validated_users,
+        total=total,
+        page=params.page,
+        size=params.size,
+        pages=total_pages,
+    )
     return StandardResponse(
         success=True,
         message=CrudMessages.READ_ALL_SUCCESS.format(module="User"),
-        data=validated_users,
+        data=data,
     )
 
 
 @router.get(
     "/{organization_id}/users",
-    response_model=StandardResponse[list[UserResponse]],
+    response_model=StandardResponse[PaginatedData[UserResponse]],
     status_code=status.HTTP_200_OK,
     summary="Get all users of an organization",
     description="Validates target organization credentials and retrieves all user profiles linked to its ecosystem context loop partition.",
+    dependencies=[Depends(ALLOW_ADMIN_OR_MANAGER)],
 )
 async def get_organization_users(
     organization_id: int,
     db: AsyncSession = Depends(get_db),
     service: UserService = Depends(get_user_service),
     current_user: dict = Depends(get_current_user),
-) -> StandardResponse[list[UserResponse]]:
-    """
-    Endpoint handler to intercept platform requests, manage validation processing contexts,
-    and output unified JSON arrays structural packets mapped back onto target validation schemas.
+    params: PaginationParams = Depends(get_pagination_params),
+):
+    """Retrieve a paginated list of all users linked to an organization.
+
+    Executes a GET request to `/{organization_id}/users` to fetch organization staff.
+
+    Args:
+        organization_id (int): The unique ID of the organization.
+        db (AsyncSession): The asynchronous database session dependency.
+        service (UserService): The user service layer dependency.
+        current_user (dict): The authenticated user context.
+        params (PaginationParams): Pagination parameters.
+
+    Raises:
+        HTTPException (400): If the pagination parameters are invalid.
+        HTTPException (403): If the user lacks access to the organization.
+        HTTPException (404): If the organization does not exist.
+
+    Returns:
+        StandardResponse[PaginatedData[UserResponse]]: A paginated list of users.
     """
     verify_tenant_access(current_user, organization_id)
     # Operational handoff straight down onto application service bounds
-    user_data = await service.get_org_users(db=db, org_id=organization_id)
+    user_data, total = await service.get_org_users(
+        db=db, org_id=organization_id, params=params
+    )
+    total_pages = (total + params.size - 1) // params.size
 
     # Explicit conversion wrapping Pydantic data schemas cleanly inside your custom global layout
     validated_users = [UserResponse.model_validate(user) for user in user_data]
+    data = PaginatedData(
+        items=validated_users,
+        total=total,
+        page=params.page,
+        size=params.size,
+        pages=total_pages,
+    )
 
     return StandardResponse(
         success=True,
-        message=UserMessages.ORG_USERS_RETRIEVED.format(
-            organization_id=organization_id
-        ),
-        data=validated_users,
+        message=CrudMessages.ORG_DATA_RETRIEVED.format(module="Users"),
+        data=data,
     )
 
 
@@ -170,17 +207,23 @@ async def get_user(
     service: UserService = Depends(get_user_service),
     current_user: dict = Depends(get_current_user),
 ) -> StandardResponse[UserResponse]:
-    """
-    Retrieves a specific user by its unique identifier.
+    """Retrieve a specific user by its unique identifier.
+
+    Executes a GET request to `/users/{user_id}` to fetch a user profile.
 
     Args:
-        user_id (int): The ID of the user to fetch.
-        db (AsyncSession): The active database session context.
-        service (UserService): The user service layer.
-        current_user: get current logged_in user's details.
+        user_id (int): The unique ID of the user.
+        db (AsyncSession): The asynchronous database session dependency.
+        service (UserService): The user service layer dependency.
+        current_user (dict): The authenticated user context.
+
+    Raises:
+        HTTPException (400): If the user ID is invalid.
+        HTTPException (403): If the user lacks access to the requested user profile.
+        HTTPException (404): If the user does not exist.
 
     Returns:
-        StandardResponse[UserResponse]: The requested user details.
+        StandardResponse[UserResponse]: A standardized wrapper containing the user details.
     """
     user_data = await service.get_user(db=db, user_id=user_id)
     verify_tenant_access(current_user, user_data.organization_id)
@@ -208,18 +251,24 @@ async def update_user(
     service: UserService = Depends(get_user_service),
     current_user: dict = Depends(get_current_user),
 ) -> StandardResponse[UserResponse]:
-    """
-    Updates an existing user's information.
+    """Update an existing user's information.
+
+    Executes a PATCH request to `/users/{user_id}` to modify a user profile.
 
     Args:
         payload (UserUpdate): Payload containing the fields to update.
-        user_id (int): The ID of the user to update.
-        db (AsyncSession): The active database session context.
-        service (UserService): The user service layer.
-        current_user: get current logged_in user's details.
+        user_id (int): The unique ID of the user to update.
+        db (AsyncSession): The asynchronous database session dependency.
+        service (UserService): The user service layer dependency.
+        current_user (dict): The authenticated user context.
+
+    Raises:
+        HTTPException (400): If the payload is invalid.
+        HTTPException (403): If the user lacks access to the requested user profile.
+        HTTPException (404): If the user does not exist.
 
     Returns:
-        StandardResponse[UserResponse]: The updated user details.
+        StandardResponse[UserResponse]: A standardized wrapper containing the updated user details.
     """
     existing_user = await service.get_user(db=db, user_id=user_id)
     verify_tenant_access(current_user, existing_user.organization_id)
@@ -245,17 +294,23 @@ async def delete_user(
     service: UserService = Depends(get_user_service),
     current_user: dict = Depends(get_current_user),
 ) -> StandardResponse[None]:
-    """
-    Deletes a user from the system.
+    """Delete a user from the system.
+
+    Executes a DELETE request to `/users/{user_id}`.
 
     Args:
-        user_id (int): The ID of the user to delete.
-        db (AsyncSession): The active database session context.
-        service (UserService): The user service layer.
-        current_user: get current logged_in user's details.
+        user_id (int): The unique ID of the user to delete.
+        db (AsyncSession): The asynchronous database session dependency.
+        service (UserService): The user service layer dependency.
+        current_user (dict): The authenticated user context.
+
+    Raises:
+        HTTPException (400): If the user cannot be deleted.
+        HTTPException (403): If the user lacks access to delete the user.
+        HTTPException (404): If the user does not exist.
 
     Returns:
-        Response: An empty 204 No Content response on success.
+        StandardResponse[None]: A standardized wrapper indicating successful deletion.
     """
     existing_user = await service.get_user(db=db, user_id=user_id)
     verify_tenant_access(current_user, existing_user.organization_id)

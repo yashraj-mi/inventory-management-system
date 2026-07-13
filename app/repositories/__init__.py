@@ -1,6 +1,7 @@
-"""
-__init__.py module.
+"""Initialize the repositories package.
 
-Provides core functionality and components for the __init__ domain.
+This module exposes repository classes that abstract database interactions
+for the application, providing a clean interface for the service layer to
+execute CRUD operations and complex queries without raw SQL.
 """
 # Package marker

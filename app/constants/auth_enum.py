@@ -1,18 +1,20 @@
-"""
-auth_enum.py module.
+"""Define authentication and authorization enumerations.
 
-Provides core functionality and components for the auth_enum domain.
+Provides standardized success and error messages used by the authentication
+services and routers to ensure consistent user feedback.
 """
 
 from enum import Enum
 
 
 class AuthMessages(str, Enum):
-    # --- Success Response Messages (Router Layer) ---
-    """
-    Represents the AuthMessages component.
+    """Represent standard messages for authentication workflows.
+
+    Used by the router and service layers to return consistent text for
+    login, token refresh, and permission errors.
     """
 
+    # --- Success Response Messages (Router Layer) ---
     LOGIN_SUCCESSFUL = "Successfully logged in."
     TOKEN_REFRESHED = "Access token refreshed successfully."
 
@@ -22,7 +24,7 @@ class AuthMessages(str, Enum):
     INACTIVE_ORG = "Organization account is not active."
     INVALID_TOKEN = "Invalid token."
     NO_PERMISSION = (
-        "Forbidden: You do not have permission to access another organization's data."
+        "Forbidden: You do not have permission to access another organization's\ndata."
     )
     RESOURCE_ACCESS = "You do not have permission to access this resource"
     DB_UNEXPECTED_UPDATE = (
@@ -30,8 +32,13 @@ class AuthMessages(str, Enum):
     )
 
     def format(self, **kwargs) -> str:
-        """
-        Dynamically inject context variables into the enum message string.
-        Example: AuthMessages.INACTIVE_USER.format()
+        """Inject context variables dynamically into the enum message string.
+
+        Args:
+            **kwargs: Arbitrary keyword arguments corresponding to placeholders
+                in the message string.
+
+        Returns:
+            str: The formatted message string.
         """
         return self.value.format(**kwargs)

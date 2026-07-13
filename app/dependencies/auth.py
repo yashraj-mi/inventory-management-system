@@ -1,7 +1,7 @@
 """
-auth.py module.
+Dependency injection module for auth.py.
 
-Provides core functionality and components for the auth domain.
+Provides FastAPI dependencies for auth components.
 """
 
 from typing import List
@@ -9,8 +9,38 @@ from fastapi import Depends, status
 
 from app.constants.user_enum import UserRole
 from app.core.exceptions import AppException
-from app.core.security import get_current_user
 from app.constants.auth_enum import AuthMessages
+from app.repositories.auth_repository import AuthRepository
+from app.services.auth_service import AuthService
+from app.dependencies.organization import get_organization_repo
+from app.repositories.organization_repository import OrganizationRepository
+from app.core.security import get_current_user
+
+
+def get_auth_repo() -> AuthRepository:
+    """
+    Provide a auth repository instance.
+
+    Returns:
+        Repository instance for database operations.
+    """
+    return AuthRepository()
+
+
+def get_auth_service(
+    auth_repo: AuthRepository = Depends(get_auth_repo),
+    org_repo: OrganizationRepository = Depends(get_organization_repo),
+) -> AuthService:
+    """
+    Provide a auth service instance.
+
+    Args:
+        Dependencies injected by FastAPI.
+
+    Returns:
+        Service instance for business logic.
+    """
+    return AuthService(auth_repo=auth_repo, org_repo=org_repo)
 
 
 class RoleChecker:
@@ -23,13 +53,10 @@ class RoleChecker:
 
     def __init__(self, allowed_roles: List[UserRole]):
         """
-        Executes the __init__ operation.
+        Initialize the RoleChecker with a list of permitted roles.
 
         Args:
-            allowed_roles: Parameter description.
-
-        Returns:
-            Execution result.
+            allowed_roles (List[UserRole]): The list of roles that have access.
         """
         self.allowed_roles = allowed_roles
 

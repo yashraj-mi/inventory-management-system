@@ -11,8 +11,12 @@ from app.db.models.organization import Organization  # noqa: F401
 from app.db.models.warehouse import Warehouse  # noqa: F401
 from app.db.models.warehouse_users import WarehouseUsers  # noqa: F401
 from app.api.v1.router import api_router
-
+from app.middlewares.logging_middleware import RequestLoggingMiddleware
 from app.core.error_handlers import init_error_handlers
+
+from app.core.logging_config import setup_logging
+
+setup_logging()
 
 
 @asynccontextmanager
@@ -31,6 +35,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Inventory Management System", lifespan=lifespan)
 
+app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # TODO: Restrict in production

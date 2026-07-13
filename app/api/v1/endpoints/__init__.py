@@ -1,6 +1,1 @@
-"""
-__init__.py module.
-
-Provides core functionality and components for the __init__ domain.
-"""
-# Package marker
+"""Provide all v1 endpoint implementations and route definitions."""

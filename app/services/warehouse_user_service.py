@@ -1,7 +1,8 @@
 """
-warehouse_user_service.py module.
+Warehouse user service managing role scoping.
 
-Provides core functionality and components for the warehouse_user_service domain.
+Controls the physical location assignments for staff, determining which
+warehouses a user has permissions to operate in.
 """
 
 from typing import Sequence
@@ -13,6 +14,9 @@ from app.db.models.warehouse_users import WarehouseUsers
 from app.schemas.warehouse_user import WarehouseUserAssign
 from app.core.exceptions import AppException
 from app.constants.warehouse_user_enum import WarehouseUserMessages
+from app.constants.common_enum import CrudMessages
+from app.dependencies.pagination import PaginationParams
+from app.core.profiling import log_timing
 
 
 class WarehouseUserService:
@@ -20,33 +24,33 @@ class WarehouseUserService:
     Manages the operational validation and rules for assigning users to physical warehouses.
     """
 
-    def __init__(self, repo: WarehouseUserRepository | None = None) -> None:
+    def __init__(self, repo: WarehouseUserRepository) -> None:
         """
-        Executes the __init__ operation.
+        Initialize the WarehouseUserService.
 
         Args:
-            repo: Parameter description.
-
-        Returns:
-            Execution result.
+            repo: Data access layer for warehouse user mapping.
         """
-        self.repo = repo or WarehouseUserRepository()
+        self.repo = repo
 
+    @log_timing
     async def list_users_in_warehouse(
-        self, db: AsyncSession, warehouse_id: int
-    ) -> Sequence[WarehouseUsers]:
+        self, db: AsyncSession, warehouse_id: int, params: PaginationParams
+    ) -> tuple[Sequence[WarehouseUsers], int]:
         """
-        Retrieves all user assignments for a given warehouse.
+        Retrieve all users assigned to a specific warehouse.
 
         Args:
-            db (AsyncSession): The active database session context.
-            warehouse_id (int): The ID of the warehouse.
+            db: The active database session context.
+            warehouse_id: Target warehouse ID.
+            params: Pagination parameters.
 
         Returns:
-            Sequence[WarehouseUsers]: A sequence of mapping records.
+            Tuple containing user assignments and total count.
         """
-        return await self.repo.list_by_warehouse(db, warehouse_id)
+        return await self.repo.list_by_warehouse(db, warehouse_id, params)
 
+    @log_timing
     async def assign_user_to_warehouse(
         self,
         db: AsyncSession,
@@ -55,19 +59,21 @@ class WarehouseUserService:
         actor_id: int,
     ) -> WarehouseUsers:
         """
-        Assigns a user to a warehouse, ensuring no duplicate assignments exist.
+        Assign a user to a specific warehouse location.
+
+        Prevents duplicate assignment mappings for the same user-warehouse pair.
 
         Args:
-            db (AsyncSession): The active database session context.
-            warehouse_id (int): The ID of the warehouse.
-            payload (WarehouseUserAssign): Payload containing the user ID to assign.
-            actor_id (int): The ID of the user performing the assignment.
+            db: The active database session context.
+            warehouse_id: Target warehouse ID.
+            payload: Body containing user ID to assign.
+            actor_id: ID of the admin performing the assignment.
 
         Returns:
-            WarehouseUsers: The newly created assignment record.
+            The created WarehouseUsers mapping entity.
 
         Raises:
-            AppException: If the user is already assigned to the warehouse.
+            AppException: If assignment already exists (400/409) or DB errors.
         """
         # Prevent duplication entries
         existing = await self.repo.get_assignment(db, warehouse_id, payload.user_id)
@@ -93,29 +99,32 @@ class WarehouseUserService:
         except SQLAlchemyError:
             await db.rollback()
             raise AppException(
-                message=WarehouseUserMessages.DB_UNEXPECTED_ASSIGNMENT,
+                message=CrudMessages.DB_UNEXPECTED.format(
+                    module="Warehouse User", action="assignment"
+                ),
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         return assignment
 
+    @log_timing
     async def remove_user_from_warehouse(
         self, db: AsyncSession, warehouse_id: int, user_id: int
     ) -> None:
         """
-        Removes a user's warehouse assignment.
+        Remove a user's warehouse assignment.
 
         Args:
-            db (AsyncSession): The active database session context.
-            warehouse_id (int): The ID of the warehouse.
-            user_id (int): The ID of the assigned user.
+            db: Active database session context.
+            warehouse_id: Target warehouse ID.
+            user_id: ID of the user being removed.
 
         Raises:
-            AppException: If the assignment mapping record is not found (404).
+            AppException: If mapping doesn't exist (404) or unknown DB error.
         """
         assignment = await self.repo.get_assignment(db, warehouse_id, user_id)
         if not assignment:
             raise AppException(
-                message=WarehouseUserMessages.NOT_FOUND,
+                message=CrudMessages.NOT_FOUND.format(module="Warehouse assignment"),
                 status_code=status.HTTP_404_NOT_FOUND,
             )
 
@@ -125,12 +134,16 @@ class WarehouseUserService:
         except IntegrityError:
             await db.rollback()
             raise AppException(
-                message=WarehouseUserMessages.DB_RELATIONAL_CONSTRAINTS,
+                message=CrudMessages.DB_RELATIONAL_CONSTRAINT.format(
+                    module="Warehouse User"
+                ),
                 status_code=status.HTTP_409_CONFLICT,
             )
         except SQLAlchemyError:
             await db.rollback()
             raise AppException(
-                message=WarehouseUserMessages.DB_UNEXPECTED_REMOVAL,
+                message=CrudMessages.DB_UNEXPECTED.format(
+                    module="Warehouse User", action="removal"
+                ),
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )

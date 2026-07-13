@@ -1,7 +1,8 @@
 """
-base.py module.
+Define the base model for all SQLAlchemy database models.
 
-Provides core functionality and components for the base domain.
+Establishes the foundational SQLAlchemy declarative base class used across the
+application to ensure consistent primary key structure and automated timestamp tracking.
 """
 
 from datetime import datetime, timezone
@@ -13,10 +14,16 @@ from app.core.database import Base
 
 class BaseModel(Base):
     """
-    Abstract base model that all database models inherit from.
+    Represent the abstract base model for all database tables.
 
-    Provides common columns `id`, `created_at`, and `updated_at` to ensure
-    consistent primary key and timestamp tracking across all database tables.
+    Provides the universally required `id`, `created_at`, and `updated_at` columns.
+    By inheriting from this class, models automatically gain consistent primary keys
+    and timezone-aware timestamp auditing without duplicating column definitions.
+
+    Attributes:
+        id (int): The primary key identifier for the record.
+        created_at (datetime): The UTC timestamp when the record was inserted.
+        updated_at (datetime): The UTC timestamp when the record was last modified.
     """
 
     __abstract__ = True

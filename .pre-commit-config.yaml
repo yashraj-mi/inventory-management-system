@@ -11,6 +11,5 @@ repos:
     rev: v0.4.10
     hooks:
       - id: ruff
-        # --fix tells it to actively delete unused imports automatically
-        args: [ --fix, --ignore=E501 ]
+        args: [ --fix ]
       - id: ruff-format

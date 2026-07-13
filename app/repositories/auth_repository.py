@@ -1,7 +1,7 @@
-"""
-auth_repository.py module.
+"""Manage database interactions for user authentication.
 
-Provides core functionality and components for the auth_repository domain.
+This module provides the repository for querying and updating user records
+during authentication flows, isolating the database logic from security layers.
 """
 
 from datetime import datetime, timezone
@@ -11,38 +11,47 @@ from app.db.models.user import User
 
 
 class AuthRepository:
-    """
-    Repository layer responsible for database interactions during the
-    authentication lifecycle.
+    """Manage data access for authentication-related operations.
+
+    This repository handles retrieving user records by email for login validation
+    and updating metadata such as the last login timestamp.
     """
 
     async def get_user(self, db: AsyncSession, email: str) -> User | None:
-        """
-        Retrieves a single user instance matching the provided email address.
+        """Retrieve a user instance by their email address.
+
+        Searches the database for a user matching the provided email to support
+        authentication or identity verification.
 
         Args:
-            db (AsyncSession): The active database session context.
-            email (str): The target email address to match.
+            db (AsyncSession): The active asynchronous database session.
+            email (str): The email address to look up.
 
         Returns:
-            User | None: The found database user instance, or None if no record exists.
+            User | None: The matching user record if found, otherwise None.
+
+        Raises:
+            SQLAlchemyError: If an error occurs during the database query.
         """
         statement = select(User).where(User.email == email)
         result = await db.execute(statement)
         return result.scalars().first()
 
     async def update_last_login(self, db: AsyncSession, user: User) -> User:
-        """
-        Updates the last_login timestamp for a specific user instance.
+        """Update the last login timestamp for the given user.
 
-        Uses a database-compatible naive UTC datetime payload.
+        Modifies the user's last_login attribute to the current UTC time (as a
+        naive datetime) to track recent system access.
 
         Args:
-            db (AsyncSession): The active database session context.
-            user (User): The user entity to be updated.
+            db (AsyncSession): The active asynchronous database session.
+            user (User): The user entity to update.
 
         Returns:
-            User: The updated user instance with the new timestamp.
+            User: The updated user instance.
+
+        Raises:
+            SQLAlchemyError: If an error occurs during the database transaction.
         """
         # Generates a clean, timezone-naive UTC timestamp to match your TIMESTAMP WITHOUT TIME ZONE column
         user.last_login = datetime.now(timezone.utc).replace(tzinfo=None)

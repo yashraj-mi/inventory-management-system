@@ -1,6 +1,7 @@
 """
-__init__.py module.
+Service layer modules for the Inventory Management System.
 
-Provides core functionality and components for the __init__ domain.
+This package contains service classes that encapsulate business logic,
+coordinate data access via repositories, and manage transactional boundaries.
 """
 # Package marker

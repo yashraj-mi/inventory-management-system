@@ -1,7 +1,8 @@
 """
-warehouse.py module.
+Define the database model for physical or logical warehouses.
 
-Provides core functionality and components for the warehouse domain.
+Manages the geographical or structural nodes where physical inventory is stored
+for an organization, facilitating location-based stock tracking.
 """
 
 from sqlalchemy.orm import mapped_column, Mapped
@@ -13,17 +14,18 @@ from app.db.models.base import BaseModel
 
 class Warehouse(BaseModel):
     """
-    SQLAlchemy model representing a physical or logical Warehouse.
+    Represent a distinct physical or logical storage location.
 
-    Warehouses are associated with a specific Organization and track inventory.
-    The combination of organization_id and warehouse code must be unique.
+    Warehouses belong to an organization and serve as the physical nodes where
+    inventory balances are tracked. They can be toggled active/inactive to manage
+    facilities undergoing maintenance or closure.
 
     Attributes:
-        organization_id (int): Foreign key to the parent Organization.
-        name (str): Human-readable name of the warehouse.
-        code (str): Unique internal code/identifier for the warehouse within the organization.
-        address (str): Physical location of the warehouse.
-        status (WarehouseStatus): Operational status (e.g., ACTIVE, INACTIVE, MAINTENANCE).
+        organization_id (int): The foreign key linking the warehouse to its owning organization.
+        name (str): The human-readable name identifying the facility (e.g., 'Main Distribution Center').
+        code (str): A unique alphanumeric identifier used for quick reference and barcode scanning.
+        address (str): The physical street address of the facility.
+        status (WarehouseStatus): The current operational state of the facility (e.g., ACTIVE, MAINTENANCE).
     """
 
     __tablename__ = "warehouses"

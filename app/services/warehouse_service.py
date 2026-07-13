@@ -1,7 +1,8 @@
 """
-warehouse_service.py module.
+Warehouse service for physical location management.
 
-Provides core functionality and components for the warehouse_service domain.
+Handles creation, updating, and deletion of warehouses within a tenant's scope.
+Validates code uniqueness and ensures the parent organization is active.
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +14,12 @@ from app.schemas.warehouse import WarehouseCreateInternal, WarehouseUpdate
 from app.core.exceptions import AppException
 from app.repositories.organization_repository import OrganizationRepository
 from app.constants.organization_enum import OrganizationStatus
-from app.constants.warehouse_enum import WarehouseMessages
+from app.constants.common_enum import CrudMessages
+from app.dependencies.pagination import PaginationParams
+from collections.abc import Sequence
+
+
+from app.core.profiling import log_timing
 
 
 class WarehouseService:
@@ -22,19 +28,20 @@ class WarehouseService:
     transactions for Warehouse entities.
     """
 
-    def __init__(self, warehouse_repo: WarehouseRepository | None = None):
+    def __init__(
+        self, warehouse_repo: WarehouseRepository, org_repo: OrganizationRepository
+    ):
         """
-        Executes the __init__ operation.
+        Initialize the WarehouseService with needed repositories.
 
         Args:
-            warehouse_repo: Parameter description.
-
-        Returns:
-            Execution result.
+            warehouse_repo: Data access layer for warehouse models.
+            org_repo: Data access layer for organization validation.
         """
-        self.warehouse_repo = warehouse_repo or WarehouseRepository()
-        self.org_repo = OrganizationRepository()
+        self.warehouse_repo = warehouse_repo
+        self.org_repo = org_repo
 
+    @log_timing
     async def create_warehouse(
         self, db: AsyncSession, warehouse_data: WarehouseCreateInternal
     ) -> Warehouse:
@@ -55,16 +62,12 @@ class WarehouseService:
         org = await self.org_repo.get_by_id(db, warehouse_data.organization_id)
         if not org:
             raise AppException(
-                message=WarehouseMessages.ORG_NOT_FOUND.format(
-                    org_id=warehouse_data.organization_id
-                ),
+                message=CrudMessages.ORG_NOT_FOUND.format(module="Warehouse"),
                 status_code=status.HTTP_404_NOT_FOUND,
             )
         if org.status != OrganizationStatus.ACTIVE:
             raise AppException(
-                message=WarehouseMessages.ORG_NOT_ACTIVE.format(
-                    org_id=warehouse_data.organization_id
-                ),
+                message=CrudMessages.ORG_NOT_ACTIVE.format(module="Warehouse"),
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -74,8 +77,8 @@ class WarehouseService:
         )
         if existing:
             raise AppException(
-                message=WarehouseMessages.CODE_ALREADY_EXISTS.format(
-                    code=warehouse_data.code
+                message=CrudMessages.ALREADY_EXISTS_FIELD.format(
+                    module="Warehouse", field="code", value=warehouse_data.code
                 ),
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
@@ -89,18 +92,21 @@ class WarehouseService:
         except IntegrityError:
             await db.rollback()
             raise AppException(
-                message=WarehouseMessages.CODE_ALREADY_EXISTS.format(
-                    code=warehouse_data.code
+                message=CrudMessages.ALREADY_EXISTS_FIELD.format(
+                    module="Warehouse", field="code", value=warehouse_data.code
                 ),
                 status_code=status.HTTP_409_CONFLICT,
             )
         except SQLAlchemyError:
             await db.rollback()
             raise AppException(
-                message=WarehouseMessages.DB_UNEXPECTED_CREATION,
+                message=CrudMessages.DB_UNEXPECTED.format(
+                    module="Warehouse", action="creation"
+                ),
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
+    @log_timing
     async def get_warehouse(self, db: AsyncSession, warehouse_id: int) -> Warehouse:
         """
         Retrieves a warehouse by ID, raising an error if not found.
@@ -115,26 +121,31 @@ class WarehouseService:
         Raises:
             AppException: If not found (404).
         """
-        warehouse = await self.warehouse_repo.get(db, warehouse_id)
+        warehouse = await self.warehouse_repo.get_by_id(db, warehouse_id)
         if not warehouse:
             raise AppException(
-                message=WarehouseMessages.NOT_FOUND,
+                message=CrudMessages.NOT_FOUND.format(module="Warehouse"),
                 status_code=status.HTTP_404_NOT_FOUND,
             )
         return warehouse
 
-    async def get_all_warehouses(self, db: AsyncSession) -> list[Warehouse]:
+    @log_timing
+    async def get_all_warehouses(
+        self, db: AsyncSession, params: PaginationParams
+    ) -> tuple[Sequence[Warehouse], int]:
         """
-        Retrieves all warehouses.
+        Retrieve a paginated list of all warehouses in the system.
 
         Args:
-            db (AsyncSession): The active database session context.
+            db: The active database session context.
+            params: Pagination filters.
 
         Returns:
-            list[Warehouse]: List of all warehouses.
+            Tuple of warehouse models and the total count.
         """
-        return await self.warehouse_repo.get_all(db)
+        return await self.warehouse_repo.get_all(db, params)
 
+    @log_timing
     async def update_warehouse(
         self, db: AsyncSession, warehouse_id: int, update_data: WarehouseUpdate
     ) -> Warehouse:
@@ -163,7 +174,9 @@ class WarehouseService:
             )
             if existing:
                 raise AppException(
-                    message=WarehouseMessages.CODE_IN_USE,
+                    message=CrudMessages.ALREADY_IN_USE.format(
+                        module="Warehouse", field="code"
+                    ),
                     status_code=status.HTTP_400_BAD_REQUEST,
                 )
 
@@ -178,23 +191,28 @@ class WarehouseService:
         except IntegrityError:
             await db.rollback()
             raise AppException(
-                message=WarehouseMessages.DB_CONSTRAINT_UPDATE,
+                message=CrudMessages.DB_CONSTRAINT.format(module="Warehouse"),
                 status_code=status.HTTP_409_CONFLICT,
             )
         except SQLAlchemyError:
             await db.rollback()
             raise AppException(
-                message=WarehouseMessages.DB_UNEXPECTED_UPDATE,
+                message=CrudMessages.DB_UNEXPECTED.format(
+                    module="Warehouse", action="update"
+                ),
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
+    @log_timing
     async def delete_warehouse(self, db: AsyncSession, warehouse_id: int) -> None:
         """
-        Deletes a warehouse by ID.
+        Permanently delete a warehouse from the system.
+
+        Deletion will fail if the warehouse still holds inventory or pending orders.
 
         Args:
-            db (AsyncSession): The active database session context.
-            warehouse_id (int): The ID of the warehouse to delete.
+            db: The active database session context.
+            warehouse_id: The ID of the warehouse to delete.
         """
         warehouse = await self.get_warehouse(db, warehouse_id)
         try:
@@ -203,17 +221,24 @@ class WarehouseService:
         except IntegrityError:
             await db.rollback()
             raise AppException(
-                message=WarehouseMessages.DB_RELATIONAL_CONSTRAINTS,
+                message=CrudMessages.DB_RELATIONAL_CONSTRAINT.format(
+                    module="Warehouse"
+                ),
                 status_code=status.HTTP_409_CONFLICT,
             )
         except SQLAlchemyError:
             await db.rollback()
             raise AppException(
-                message=WarehouseMessages.DB_UNEXPECTED_DELETION,
+                message=CrudMessages.DB_UNEXPECTED.format(
+                    module="Warehouse", action="deletion"
+                ),
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-    async def get_by_organization(self, db: AsyncSession, organization_id: int):
+    @log_timing
+    async def get_by_organization(
+        self, db: AsyncSession, organization_id: int, params: PaginationParams
+    ) -> tuple[Sequence[Warehouse], int]:
         """
         Retrieves all warehouses belonging to a specific organization.
 
@@ -222,7 +247,7 @@ class WarehouseService:
             organization_id (int): The parent organization ID.
 
         Returns:
-            Sequence[Warehouse]: The warehouses for the organization.
+            tuple: The warehouses for the organization and total count.
 
         Raises:
             AppException: If the organization doesn't exist (404).
@@ -233,10 +258,10 @@ class WarehouseService:
 
         if not organization:
             raise AppException(
-                message=WarehouseMessages.ORG_NOT_FOUND.format(org_id=organization_id),
+                message=CrudMessages.ORG_NOT_FOUND.format(module="Warehouse"),
                 status_code=status.HTTP_404_NOT_FOUND,
             )
 
         return await self.warehouse_repo.get_by_organization(
-            organization_id=organization_id, db=db
+            organization_id=organization_id, db=db, params=params
         )

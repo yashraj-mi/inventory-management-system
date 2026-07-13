@@ -1,7 +1,9 @@
 """
-auth_service.py module.
+Authentication service for managing user login and token generation.
 
-Provides core functionality and components for the auth_service domain.
+This service is responsible for validating user credentials, ensuring the
+associated user and organization are active, managing session tokens
+(access and refresh), and updating login history metadata.
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,22 +24,26 @@ from app.repositories.organization_repository import OrganizationRepository
 from app.constants.auth_enum import AuthMessages
 
 
+from app.core.profiling import log_timing
+
+
 class AuthService:
     """Service layer executing business logic for user authentication."""
 
-    def __init__(self, auth_repo: AuthRepository | None = None) -> None:
+    def __init__(
+        self, auth_repo: AuthRepository, org_repo: OrganizationRepository
+    ) -> None:
         """
-        Executes the __init__ operation.
+        Initialize the AuthService with required repositories.
 
         Args:
-            auth_repo: Parameter description.
-
-        Returns:
-            Execution result.
+            auth_repo: Repository for user authentication and state retrieval.
+            org_repo: Repository for organization validation to ensure business continuity.
         """
-        self.auth_repo = auth_repo or AuthRepository()
-        self.org_repo = OrganizationRepository()
+        self.auth_repo = auth_repo
+        self.org_repo = org_repo
 
+    @log_timing
     async def login(self, db: AsyncSession, payload: UserLogin) -> LoginResponse:
         """Authenticates a user, updates their login history, and generates secure session tokens.
 
@@ -110,6 +116,7 @@ class AuthService:
 
         return token_data
 
+    @log_timing
     async def refresh_token(
         self,
         token: str,

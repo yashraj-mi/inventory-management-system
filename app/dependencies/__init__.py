@@ -1,6 +1,5 @@
 """
-__init__.py module.
+Dependency injection module for __init__.py.
 
-Provides core functionality and components for the __init__ domain.
+Provides FastAPI dependencies for __init__ components.
 """
-# Package marker

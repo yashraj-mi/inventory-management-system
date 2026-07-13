@@ -1,7 +1,8 @@
 """
-exceptions.py module.
+Custom exception definitions module.
 
-Provides core functionality and components for the exceptions domain.
+Provides standardized exception classes used throughout the application to signal
+expected business logic errors or validation failures, ensuring consistent error responses.
 """
 
 from typing import Any
@@ -12,10 +13,13 @@ class AppException(Exception):
     """
     Custom exception class for application-level errors.
 
-    Args:
-        message (str): The error message.
+    Used to raise controlled errors that are caught by the global error handler
+    and returned as structured JSON responses.
+
+    Attributes:
+        message (str): The specific error message to be returned to the client.
         status_code (int): The HTTP status code associated with the error.
-        data (Any): Optional additional data related to the error.
+        data (Any): Optional additional data or context related to the error.
     """
 
     def __init__(
@@ -25,15 +29,12 @@ class AppException(Exception):
         data: Any = None,
     ):
         """
-        Executes the __init__ operation.
+        Initialize the AppException.
 
         Args:
-            message: Parameter description.
-            status_code: Parameter description.
-            data: Parameter description.
-
-        Returns:
-            Execution result.
+            message (str): A descriptive error message explaining the failure.
+            status_code (int, optional): The HTTP status code to return. Defaults to 400.
+            data (Any, optional): Supplementary data related to the error context. Defaults to None.
         """
         super().__init__(message)
         self.message = message

@@ -1,7 +1,8 @@
 """
-user.py module.
+Define the database model for application users.
 
-Provides core functionality and components for the user domain.
+Manages authentication credentials and role-based access control mapping for
+individuals interacting with the inventory system on behalf of an organization.
 """
 
 from __future__ import annotations
@@ -10,36 +11,41 @@ from typing import TYPE_CHECKING
 from datetime import datetime
 
 from sqlalchemy import Enum, ForeignKey
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import BaseModel
 from .mixins import StatusMixin
 from app.constants.user_enum import UserRole
 
 if TYPE_CHECKING:
-    pass
+    from app.db.models.organization import Organization
 
 
 class User(BaseModel, StatusMixin):
     """
-    SQLAlchemy model representing a User in the system.
+    Represent an authenticated individual accessing the system.
 
-    Users belong to a specific Organization and are assigned a Role which
-    dictates their permissions (e.g., SUPER_ADMIN, ORG_ADMIN, WAREHOUSE_MANAGER).
+    Users are intrinsically linked to a single organization (unless they are super admins)
+    and their assigned role determines what actions they can perform (e.g., view stock, create orders).
 
     Attributes:
-        organization_id (int): Foreign key linking the user to an Organization.
-        role (UserRole): The authorization role assigned to the user.
-        first_name (str): User's given name.
-        last_name (str): User's family name.
-        email (str): Unique email address, used for login.
-        password_hash (str): Bcrypt hashed password.
-        last_login (datetime, optional): Timestamp of the user's most recent login.
+        organization_id (int): The foreign key linking the user to their employer organization.
+        organization (Organization): The ORM relationship to the parent organization.
+        role (UserRole): The predefined security role granting specific application permissions.
+        first_name (str): The user's given name.
+        last_name (str): The user's family name or surname.
+        email (str): The unique email address used as the login credential.
+        password_hash (str): The securely hashed password string for authentication.
+        last_login (datetime | None): The timestamp indicating when the user last authenticated successfully.
     """
 
     __tablename__ = "users"
 
     organization_id: Mapped[int] = mapped_column(
-        ForeignKey("organizations.id"), nullable=False
+        ForeignKey("organizations.id"), nullable=False, index=True
+    )
+
+    organization: Mapped["Organization"] = relationship(
+        "Organization", back_populates="users", foreign_keys=[organization_id]
     )
 
     role: Mapped[UserRole] = mapped_column(

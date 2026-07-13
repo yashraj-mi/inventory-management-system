@@ -1,6 +1,1 @@
-"""
-__init__.py module.
-
-Provides core functionality and components for the __init__ domain.
-"""
-# Package marker
+"""Provide version 1 (v1) API routes and configuration."""

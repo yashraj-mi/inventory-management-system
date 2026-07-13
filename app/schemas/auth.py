@@ -1,19 +1,21 @@
 """
-auth.py module.
+Provide schemas for authentication and authorization operations.
 
-Provides core functionality and components for the auth domain.
+This module contains Pydantic models used to validate incoming login credentials
+and format outgoing authentication token responses.
 """
 
 from pydantic import Field, EmailStr, BaseModel
 
 
 class UserLogin(BaseModel):
-    """
-    Schema for user login credentials.
+    """Represent user login credentials for authentication requests.
+
+    Used in the request body of login endpoints to authenticate a user.
 
     Attributes:
-        email (EmailStr): User's email address.
-        password (str): User's plain text password.
+        email (EmailStr): User's email address used as the primary identifier.
+        password (str): User's plain text password, requiring a minimum of 8 characters.
     """
 
     email: EmailStr
@@ -21,13 +23,14 @@ class UserLogin(BaseModel):
 
 
 class LoginResponse(BaseModel):
-    """
-    Data transfer object for authentication tokens returned to the client upon successful login.
+    """Represent the authentication tokens returned upon successful login.
+
+    Used in the response body of login endpoints to provide access and refresh tokens.
 
     Attributes:
-        access_token (str): JWT access token.
-        refresh_token (str): JWT refresh token.
-        token_type (str): Type of the token, usually "bearer".
+        access_token (str): JWT access token used for authorizing subsequent requests.
+        refresh_token (str): JWT refresh token used to obtain new access tokens.
+        token_type (str): Type of the token, expected to be 'bearer' for HTTP Bearer authentication.
     """
 
     access_token: str
@@ -36,12 +39,13 @@ class LoginResponse(BaseModel):
 
 
 class TokenResponse(BaseModel):
-    """
-    Schema for returning a single token, such as after a refresh operation.
+    """Represent a single token returned from refresh operations.
+
+    Used in the response body when exchanging a refresh token for a new access token.
 
     Attributes:
-        access_token (str): The new JWT access token.
-        token_type (str): Type of the token, usually "bearer".
+        access_token (str): The newly issued JWT access token.
+        token_type (str): Type of the token, expected to be 'bearer' for HTTP Bearer authentication.
     """
 
     access_token: str
@@ -49,11 +53,12 @@ class TokenResponse(BaseModel):
 
 
 class Token(BaseModel):
-    """
-    Schema for validating a token provided in the request body (e.g., for refresh).
+    """Represent a token provided in a request body.
+
+    Used in requests that require a token payload, such as token refresh or revocation.
 
     Attributes:
-        token (str): The JWT token string.
+        token (str): The raw JWT token string to be processed.
     """
 
     token: str = Field(..., min_length=1)

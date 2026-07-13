@@ -1,7 +1,8 @@
 """
-email_service.py module.
+Email service for asynchronous notifications.
 
-Provides core functionality and components for the email_service domain.
+Configures SMTP via fastapi-mail and dispatches transactional emails such as
+registration reviews, approvals, and credential generation to users.
 """
 
 from pathlib import Path
@@ -21,12 +22,10 @@ class EmailService:
 
     def __init__(self):
         """
-        Executes the __init__ operation.
+        Initialize EmailService with connection configurations.
 
-        Args:
-
-        Returns:
-            Execution result.
+        Sets up the SMTP connection parameters using environment variables and
+        initializes the FastMail instance with the templating directory.
         """
         self.config = ConnectionConfig(
             MAIL_USERNAME=settings.MAIL_USERNAME,
@@ -47,12 +46,14 @@ class EmailService:
         self, background_tasks: BackgroundTasks, recipient: str, org_name: str
     ):
         """
-        Sends an email acknowledging receipt of an organization registration request.
+        Send an email acknowledging receipt of an organization registration request.
+
+        This delegates the actual sending to a FastAPI background task.
 
         Args:
-            background_tasks (BackgroundTasks): FastAPI background task manager to run sending asynchronously.
-            recipient (str): Email address of the organization contact.
-            org_name (str): Name of the registered organization.
+            background_tasks: FastAPI background task manager to run sending asynchronously.
+            recipient: Email address of the organization contact.
+            org_name: Name of the registered organization.
         """
         message = MessageSchema(
             subject=f"Registration Received - {org_name}",
@@ -70,12 +71,14 @@ class EmailService:
         self, background_tasks: BackgroundTasks, recipient: str, org_name: str
     ):
         """
-        Sends an email notifying that the organization registration was approved.
+        Send an email notifying that the organization registration was approved.
+
+        This delegates the actual sending to a FastAPI background task.
 
         Args:
-            background_tasks (BackgroundTasks): FastAPI background task manager.
-            recipient (str): Email address of the organization contact.
-            org_name (str): Name of the approved organization.
+            background_tasks: FastAPI background task manager.
+            recipient: Email address of the organization contact.
+            org_name: Name of the approved organization.
         """
         message = MessageSchema(
             subject=f"Welcome to the Platform! Organization Approved: {org_name}",
@@ -98,14 +101,16 @@ class EmailService:
         temp_password: str,
     ):
         """
-        Sends an email with temporary login credentials for a new organization admin.
+        Send an email with temporary login credentials for a new organization admin.
+
+        This delegates the actual sending to a FastAPI background task.
 
         Args:
-            background_tasks (BackgroundTasks): FastAPI background task manager.
-            recipient (str): Email address of the new admin user.
-            first_name (str): First name of the admin user.
-            org_name (str): Name of the organization.
-            temp_password (str): The automatically generated temporary password.
+            background_tasks: FastAPI background task manager.
+            recipient: Email address of the new admin user.
+            first_name: First name of the admin user.
+            org_name: Name of the organization.
+            temp_password: The automatically generated temporary password.
         """
         message = MessageSchema(
             subject="Action Required: Setup Your Admin Profile Account",

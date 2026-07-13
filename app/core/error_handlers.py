@@ -1,7 +1,9 @@
 """
-error_handlers.py module.
+Global exception handlers module.
 
-Provides core functionality and components for the error_handlers domain.
+Registers custom exception handlers with the FastAPI application to ensure
+all application errors, validation errors, and unhandled exceptions are
+returned in a standardized JSON response format.
 """
 
 from fastapi import Request, FastAPI, status
@@ -18,26 +20,29 @@ logger = logging.getLogger(__name__)
 
 def init_error_handlers(app: FastAPI):
     """
-    Executes the init_error_handlers operation.
+    Register global error handlers for the FastAPI application.
+
+    This function attaches custom exception handlers for AppException,
+    RequestValidationError, and generic Exception to format API responses.
 
     Args:
-        app: Parameter description.
-
-    Returns:
-        Execution result.
+        app (FastAPI): The FastAPI application instance to attach handlers to.
     """
 
     @app.exception_handler(AppException)
     async def app_exception_handler(request: Request, exc: AppException):
         """
-        Executes the app_exception_handler operation.
+        Handle custom application exceptions.
+
+        Formats the response using the status code and message provided in the
+        AppException, returning it as a StandardResponse structure.
 
         Args:
-            request: Parameter description.
-            exc: Parameter description.
+            request (Request): The incoming HTTP request.
+            exc (AppException): The raised custom application exception.
 
         Returns:
-            Execution result.
+            JSONResponse: Formatted JSON response with the provided status code.
         """
         response_body = StandardResponse(
             success=False, message=exc.message, data=exc.data
@@ -52,14 +57,17 @@ def init_error_handlers(app: FastAPI):
         request: Request, exc: RequestValidationError
     ):
         """
-        Executes the validation_exception_handler operation.
+        Handle request validation errors.
+
+        Catches Pydantic validation errors from FastAPI, parses them into a
+        structured list of errors, and returns a 422 Unprocessable Content response.
 
         Args:
-            request: Parameter description.
-            exc: Parameter description.
+            request (Request): The incoming HTTP request.
+            exc (RequestValidationError): The raised validation exception.
 
         Returns:
-            Execution result.
+            JSONResponse: Formatted JSON response with 422 status and error details.
         """
         errors = [
             {"field": err["loc"][-1], "type": err["type"], "msg": err["msg"]}
@@ -78,14 +86,18 @@ def init_error_handlers(app: FastAPI):
     @app.exception_handler(Exception)
     async def universal_exception_handler(request: Request, exc: Exception):
         """
-        Executes the universal_exception_handler operation.
+        Handle all other unhandled exceptions.
+
+        Provides a catch-all mechanism for unexpected server errors, logging the
+        full stack trace and returning a generic 500 Internal Server Error response
+        to avoid leaking sensitive application state.
 
         Args:
-            request: Parameter description.
-            exc: Parameter description.
+            request (Request): The incoming HTTP request.
+            exc (Exception): The unhandled exception that was raised.
 
         Returns:
-            Execution result.
+            JSONResponse: Generic 500 JSON response indicating a server error.
         """
         logger.error(
             f"Unhandled Exception on {request.method} {request.url}: {exc}",

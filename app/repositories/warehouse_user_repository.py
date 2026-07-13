@@ -1,33 +1,43 @@
-"""
-warehouse_user_repository.py module.
+"""Manage database interactions for warehouse role assignments.
 
-Provides core functionality and components for the warehouse_user_repository domain.
+This module provides the WarehouseUserRepository for creating, checking, and
+removing permissions that authorize specific users to operate within specific
+warehouses.
 """
 
 from typing import Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from app.db.models.warehouse_users import WarehouseUsers
+from app.dependencies.pagination import PaginationParams
+from app.repositories.base import paginate_query
 
 
 class WarehouseUserRepository:
-    """
-    Handles raw database access execution for Warehouse User assignments.
+    """Manage data access for WarehouseUser linking records.
+
+    Handles the bidirectional lookup and assignment of personnel to distinct
+    physical locations within an organization.
     """
 
     async def get_assignment(
         self, db: AsyncSession, warehouse_id: int, user_id: int
     ) -> WarehouseUsers | None:
-        """
-        Checks if a user mapping entry already exists for a target warehouse.
+        """Fetch a specific mapping entry for a target warehouse and user.
+
+        Used to verify if a user has operational authorization for a given
+        warehouse facility.
 
         Args:
-            db (AsyncSession): The active database session context.
-            warehouse_id (int): The ID of the warehouse.
-            user_id (int): The ID of the user.
+            db (AsyncSession): The active asynchronous database session.
+            warehouse_id (int): The ID of the targeted warehouse.
+            user_id (int): The ID of the queried user.
 
         Returns:
-            WarehouseUsers | None: The found mapping entry, or None if not assigned.
+            WarehouseUsers | None: The mapping entry, or None if not assigned.
+
+        Raises:
+            SQLAlchemyError: If the database query fails.
         """
         result = await db.execute(
             select(WarehouseUsers).where(
@@ -38,43 +48,49 @@ class WarehouseUserRepository:
         return result.scalars().first()
 
     async def list_by_warehouse(
-        self, db: AsyncSession, warehouse_id: int
-    ) -> Sequence[WarehouseUsers]:
-        """
-        Lists all user records currently mapped to a specific warehouse.
+        self, db: AsyncSession, warehouse_id: int, params: PaginationParams
+    ) -> tuple[Sequence[WarehouseUsers], int]:
+        """Fetch a paginated list of all personnel mapped to a specific warehouse.
 
         Args:
-            db (AsyncSession): The active database session context.
-            warehouse_id (int): The ID of the warehouse.
+            db (AsyncSession): The active asynchronous database session.
+            warehouse_id (int): The ID of the target warehouse.
+            params (PaginationParams): Pagination constraints (offset/limit).
 
         Returns:
-            Sequence[WarehouseUsers]: A sequence of mapping entries for the warehouse.
+            tuple[Sequence[WarehouseUsers], int]: The fetched mapping entries and total count.
+
+        Raises:
+            SQLAlchemyError: If the database query fails.
         """
-        result = await db.execute(
-            select(WarehouseUsers).where(WarehouseUsers.warehouse_id == warehouse_id)
+        query = select(WarehouseUsers).where(
+            WarehouseUsers.warehouse_id == warehouse_id
         )
-        return result.scalars().all()
+        return await paginate_query(db, query, params)
 
     async def add(self, db: AsyncSession, assignment: WarehouseUsers) -> WarehouseUsers:
-        """
-        Persists a brand new warehouse user assignment row.
+        """Stage a new warehouse user assignment record for insertion.
 
         Args:
-            db (AsyncSession): The active database session context.
+            db (AsyncSession): The active asynchronous database session.
             assignment (WarehouseUsers): The mapping entity to insert.
 
         Returns:
-            WarehouseUsers: The inserted mapping entity.
+            WarehouseUsers: The staged mapping entity.
         """
         db.add(assignment)
         return assignment
 
     async def delete(self, db: AsyncSession, assignment: WarehouseUsers) -> None:
-        """
-        Purges a warehouse mapping execution row from the database.
+        """Stage a warehouse user assignment row for deletion.
+
+        Effectively revokes a user's access to operate within the linked warehouse.
 
         Args:
-            db (AsyncSession): The active database session context.
+            db (AsyncSession): The active asynchronous database session.
             assignment (WarehouseUsers): The mapping entity to delete.
+
+        Raises:
+            SQLAlchemyError: If the deletion staging fails.
         """
         await db.delete(assignment)

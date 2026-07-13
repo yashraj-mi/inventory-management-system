@@ -1,6 +1,6 @@
 """
-__init__.py module.
+Application middlewares module.
 
-Provides core functionality and components for the __init__ domain.
+Provides global middleware components for the FastAPI application, such as
+request logging, authentication processing, and cross-origin resource sharing (CORS).
 """
-# Package marker

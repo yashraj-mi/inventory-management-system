@@ -1,6 +1,6 @@
 """
-__init__.py module.
+Define schemas for data validation, requests, and responses.
 
-Provides core functionality and components for the __init__ domain.
+This package contains Pydantic models used throughout the application to enforce
+data constraints, shape incoming request payloads, and serialize outgoing responses.
 """
-# Package marker

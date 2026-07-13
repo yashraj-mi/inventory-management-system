@@ -1,94 +1,121 @@
-"""
-user_repository.py module.
+"""Manage database interactions for user accounts.
 
-Provides core functionality and components for the user_repository domain.
+This module provides the UserRepository, handling data access for user profile
+management, authentication lookups, and organizational scoping queries.
 """
 
 from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.user import User
+from app.dependencies.pagination import PaginationParams
+from app.repositories.base import paginate_query
 
 
 class UserRepository:
-    """
-    Repository layer responsible strictly for low-level
-    database operations and SQL formulation for Users.
+    """Manage data access for User entities.
+
+    Abstracts database operations for tracking and authenticating platform users,
+    supporting global and organization-scoped pagination.
     """
 
     async def create(self, db: AsyncSession, user: User) -> User:
-        """
-        Adds a new User entity to the database session.
+        """Stage a new user record for database insertion.
 
         Args:
-            db (AsyncSession): The active database session context.
-            user (User): The user entity to be created.
+            db (AsyncSession): The active asynchronous database session.
+            user (User): The user entity to create.
 
         Returns:
-            User: The tracked user instance.
+            User: The staged user instance.
         """
         db.add(user)
         return user
 
-    async def get_all(self, db: AsyncSession) -> Sequence[User]:
-        """
-        Retrieves all user records from the database.
+    async def get_all(
+        self, db: AsyncSession, params: PaginationParams
+    ) -> tuple[Sequence[User], int]:
+        """Fetch a paginated list of all system users globally.
+
+        Primarily used by super-admin roles to manage global user accounts
+        across the entire platform.
 
         Args:
-            db (AsyncSession): The active database session context.
+            db (AsyncSession): The active asynchronous database session.
+            params (PaginationParams): Pagination constraints (offset/limit).
 
         Returns:
-            Sequence[User]: A sequence of all users.
+            tuple[Sequence[User], int]: The fetched users and the total count.
+
+        Raises:
+            SQLAlchemyError: If the database operation fails.
         """
-        result = await db.scalars(select(User))
-        return result.all()
+        query = select(User)
+        return await paginate_query(db, query, params)
 
     async def get_by_id(self, db: AsyncSession, user_id: int) -> User | None:
-        """
-        Retrieves a specific user by its primary key.
+        """Fetch a specific user by their primary key.
 
         Args:
-            db (AsyncSession): The active database session context.
-            user_id (int): The unique ID of the user.
+            db (AsyncSession): The active asynchronous database session.
+            user_id (int): The unique identifier of the user.
 
         Returns:
-            User | None: The found user instance, or None if not found.
+            User | None: The requested user, or None if not found.
+
+        Raises:
+            SQLAlchemyError: If the database operation fails.
         """
         return await db.get(User, user_id)
 
     async def get_by_email(self, db: AsyncSession, email: str) -> User | None:
-        """
-        Retrieves a user by their unique email address.
+        """Fetch a user by their email address.
+
+        Used extensively during authentication flows and to enforce email
+        uniqueness constraints during user registration.
 
         Args:
-            db (AsyncSession): The active database session context.
+            db (AsyncSession): The active asynchronous database session.
             email (str): The email address to look up.
 
         Returns:
-            User | None: The found user instance, or None if not found.
+            User | None: The matching user, or None if not found.
+
+        Raises:
+            SQLAlchemyError: If the database operation fails.
         """
         return await db.scalar(select(User).where(User.email == email))
 
     async def delete(self, db: AsyncSession, user: User) -> None:
-        """
-        Removes a tracked user instance from the database.
+        """Stage a user account for deletion from the database.
 
         Args:
-            db (AsyncSession): The active database session context.
-            user (User): The user entity to delete.
+            db (AsyncSession): The active asynchronous database session.
+            user (User): The user instance to remove.
+
+        Raises:
+            SQLAlchemyError: If the database operation fails.
         """
         await db.delete(user)
 
-    async def get_org_users(self, db: AsyncSession, org_id: int) -> Sequence[User]:
-        """
-            Retrieve all users belongs to an organization.
+    async def get_org_users(
+        self, db: AsyncSession, org_id: int, params: PaginationParams
+    ) -> tuple[Sequence[User], int]:
+        """Fetch a paginated list of users scoped to a specific organization.
+
+        Enforces tenant isolation by retrieving only the user accounts
+        belonging to the specified organization.
 
         Args:
-            db (AsyncSession): The active database abstraction transaction instance session.
-            org_id (int): Target tracking unique primary key constraint matching the organization.
+            db (AsyncSession): The active asynchronous database session.
+            org_id (int): The ID of the target organization.
+            params (PaginationParams): Pagination constraints (offset/limit).
 
         Returns:
-            Sequence[User]: A database results sequence containing instantiated User models.
+            tuple[Sequence[User], int]: The fetched users and total count.
+
+        Raises:
+            SQLAlchemyError: If the database operation fails.
         """
-        result = await db.scalars(select(User).where(User.organization_id == org_id))
-        return result.all()
+        query = select(User).where(User.organization_id == org_id)
+        return await paginate_query(db, query, params)
