@@ -24,16 +24,15 @@ async def db_transaction(db: AsyncSession, module: str, action: str):
             await db.refresh(record)
     """
     try:
-        yield
+        async with db.begin_nested():
+            yield
     except IntegrityError as e:
-        await db.rollback()
         # logger.warning(f"[DB] Integrity error during {module} {action}: {e}")
         raise AppException(
             message=f"{module} {action} failed due to a data conflict.",
             status_code=status.HTTP_409_CONFLICT,
         ) from e
     except SQLAlchemyError as e:
-        await db.rollback()
         # logger.error(f"[DB] Unexpected DB error during {module} {action}: {e}")
         raise AppException(
             message=f"{module} {action} failed due to an internal error.",

@@ -20,6 +20,7 @@ from app.dependencies.pagination import PaginationParams
 from app.constants.common_enum import Status
 
 from app.core.profiling import log_timing
+from app.repositories.rbac_repository import RbacRepository
 
 
 class UserService:
@@ -32,6 +33,7 @@ class UserService:
         self,
         user_repo: UserRepository,
         org_repo: OrganizationRepository,
+        rbac_repo: RbacRepository,
         warehouse_repo=None,
     ) -> None:
         """
@@ -44,6 +46,7 @@ class UserService:
         self.user_repo = user_repo
         self.org_repo = org_repo
         self.warehouse_repo = warehouse_repo
+        self.rbac_repo = rbac_repo
 
     @log_timing
     async def create_user(
@@ -79,10 +82,10 @@ class UserService:
                     status_code=status.HTTP_404_NOT_FOUND,
                 )
 
-        from app.repositories.rbac_repository import get_role_by_name, has_platform_role
+        # from app.repositories.rbac_repository import get_role_by_name, has_platform_role
         from app.db.models.rbac import UserRole
 
-        role_record = await get_role_by_name(db, payload.role)
+        role_record = await self.rbac_repo.get_role_by_name(db, payload.role)
         if not role_record:
             raise AppException(
                 message=f"Role '{payload.role}' does not exist.",
@@ -90,7 +93,7 @@ class UserService:
             )
 
         if role_record.name.upper() == "SUPER_ADMIN":
-            caller_is_super = await has_platform_role(
+            caller_is_super = await self.rbac_repo.has_platform_role(
                 db, current_user.id, "SUPER_ADMIN"
             )
             if not caller_is_super:
@@ -172,14 +175,14 @@ class UserService:
         new_warehouse_id = update_data.pop("warehouse_id", None)
 
         if new_role:
-            from app.repositories.rbac_repository import (
-                get_role_by_name,
-                has_platform_role,
-            )
+            # from app.repositories.rbac_repository import (
+            #     get_role_by_name,
+            #     has_platform_role,
+            # )
             from app.db.models.rbac import UserRole
             from sqlalchemy import delete
 
-            role_record = await get_role_by_name(db, new_role)
+            role_record = await self.rbac_repo.get_role_by_name(db, new_role)
             if not role_record:
                 raise AppException(
                     message=f"Role '{new_role}' does not exist.",
@@ -187,7 +190,7 @@ class UserService:
                 )
 
             if role_record.name.upper() == "SUPER_ADMIN":
-                caller_is_super = await has_platform_role(
+                caller_is_super = await self.rbac_repo.has_platform_role(
                     db, current_user.id, "SUPER_ADMIN"
                 )
                 if not caller_is_super:
