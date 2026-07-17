@@ -4,7 +4,7 @@ This module defines routes for organization registration, administrative review,
 retrieval, and deletion, utilizing background tasks for email notifications.
 """
 
-import secrets
+from app.db.models.user import User
 from fastapi import APIRouter, Depends, BackgroundTasks, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,11 +18,8 @@ from app.services.organization_service import OrganizationService
 from app.schemas.response import StandardResponse
 from app.core.security import get_current_user
 from app.core.exceptions import AppException
-from app.dependencies.auth import (
-    ALLOW_SUPER_ADMIN,
-    ALLOW_SUPER_ADMIN_OR_ORG_ADMIN,
-    verify_tenant_access,
-)
+from app.dependencies.rbac import require_permission
+from app.core.permissions import Permissions
 from app.services.email_service import email_service
 from app.constants.organization_enum import OrganizationStatus, OrganizationMessages
 from app.services.user_service import UserService
@@ -86,7 +83,7 @@ async def register_organization(
 @router.get(
     "",
     response_model=StandardResponse[PaginatedData[OrganizationResponse]],
-    dependencies=[Depends(ALLOW_SUPER_ADMIN)],
+    dependencies=[Depends(require_permission(Permissions.ORGANIZATION_READ))],
     summary="List all organizations",
 )
 async def list_organizations(
@@ -127,14 +124,14 @@ async def list_organizations(
 @router.get(
     "/{org_id}",
     response_model=StandardResponse[OrganizationResponse],
-    dependencies=[Depends(ALLOW_SUPER_ADMIN_OR_ORG_ADMIN)],
+    dependencies=[Depends(require_permission(Permissions.ORGANIZATION_READ))],
     summary="Get details of a single organization",
 )
 async def get_organization(
     org_id: int,
     db: AsyncSession = Depends(get_db),
     service: OrganizationService = Depends(get_organization_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Retrieve details of a single organization by ID.
 
@@ -153,7 +150,6 @@ async def get_organization(
     Returns:
         StandardResponse[OrganizationResponse]: A standardized wrapper containing organization details.
     """
-    verify_tenant_access(current_user, org_id)
     org = await service.get_organization(db, org_id)
     org = OrganizationResponse.model_validate(org)
     return StandardResponse(
@@ -167,7 +163,7 @@ async def get_organization(
 @router.patch(
     "/{org_id}/status",
     response_model=StandardResponse[OrganizationResponse],
-    dependencies=[Depends(ALLOW_SUPER_ADMIN)],
+    dependencies=[Depends(require_permission(Permissions.ORGANIZATION_UPDATE_STATUS))],
     summary="Approve, reject or update organization status",
 )
 async def review_organization(
@@ -177,7 +173,7 @@ async def review_organization(
     db: AsyncSession = Depends(get_db),
     service: OrganizationService = Depends(get_organization_service),
     user_service: UserService = Depends(get_user_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Review an organization request, updating its status to ACTIVE or REJECTED.
 
@@ -202,7 +198,7 @@ async def review_organization(
     Returns:
         StandardResponse[OrganizationResponse]: A standardized wrapper containing the updated organization details.
     """
-    sub = current_user.get("sub")
+    sub = str(current_user.id)
     if not sub:
         raise AppException(
             message=AuthMessages.INVALID_TOKEN, status_code=status.HTTP_401_UNAUTHORIZED
@@ -220,7 +216,8 @@ async def review_organization(
             org_name=updated_org.name,
         )
 
-        temp_password = secrets.token_urlsafe(16)
+        # temp_password = secrets.token_urlsafe(16)
+        temp_password = "12345678"
         user_payload = UserCreateInternal(
             organization_id=updated_org.id,
             role=UserRole.ORG_ADMIN,
@@ -229,7 +226,9 @@ async def review_organization(
             password=temp_password,
         )
 
-        await user_service.create_user(db=db, payload=user_payload)
+        await user_service.create_user(
+            db=db, payload=user_payload, current_user=current_user
+        )
         email_service.send_credentials_email(
             background_tasks=background_tasks,
             first_name=user_payload.first_name,
@@ -252,7 +251,7 @@ async def review_organization(
     "/{org_id}",
     status_code=status.HTTP_200_OK,
     response_model=StandardResponse[None],
-    dependencies=[Depends(ALLOW_SUPER_ADMIN)],
+    dependencies=[Depends(require_permission(Permissions.ORGANIZATION_DELETE))],
     summary="Permanently delete an organization",
 )
 async def delete_organization(

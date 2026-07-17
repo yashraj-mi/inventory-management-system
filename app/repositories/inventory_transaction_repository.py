@@ -5,6 +5,7 @@ used to record and retrieve historical movements of stock, ensuring a reliable
 audit trail of inventory adjustments, receipts, and fulfillments.
 """
 
+from app.repositories.base_repository import BaseRepository
 from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,47 +15,14 @@ from app.dependencies.pagination import PaginationParams
 from app.repositories.base import paginate_query
 
 
-class InventoryTransactionRepository:
+class InventoryTransactionRepository(BaseRepository[InventoryTransaction]):
     """Manage data access for InventoryTransaction records.
 
     Handles insertion and time-ordered retrieval of inventory ledger entries,
     supporting warehouse-specific or product-wide audit views.
     """
 
-    async def create(
-        self, db: AsyncSession, transaction_data: InventoryTransaction
-    ) -> InventoryTransaction:
-        """Stage a new inventory transaction record for database insertion.
-
-        Used to log every state change (e.g., reserve, adjust, fulfill) for
-        inventory tracking purposes.
-
-        Args:
-            db (AsyncSession): The active asynchronous database session.
-            transaction_data (InventoryTransaction): The transaction model to log.
-
-        Returns:
-            InventoryTransaction: The staged transaction instance.
-        """
-        db.add(transaction_data)
-        return transaction_data
-
-    async def get_by_id(
-        self, db: AsyncSession, transaction_id: int
-    ) -> InventoryTransaction | None:
-        """Fetch a specific inventory transaction by its primary key.
-
-        Args:
-            db (AsyncSession): The active asynchronous database session.
-            transaction_id (int): The unique identifier of the transaction.
-
-        Returns:
-            InventoryTransaction | None: The requested transaction, or None if not found.
-
-        Raises:
-            SQLAlchemyError: If the database operation fails.
-        """
-        return await db.get(InventoryTransaction, transaction_id)
+    model = InventoryTransaction
 
     async def get_all_by_warehouse(
         self, db: AsyncSession, warehouse_id: int, params: PaginationParams

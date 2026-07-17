@@ -4,18 +4,21 @@ This module provides the repository for querying and updating user records
 during authentication flows, isolating the database logic from security layers.
 """
 
+from app.repositories.base_repository import BaseRepository
 from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.user import User
 
 
-class AuthRepository:
+class AuthRepository(BaseRepository[User]):
     """Manage data access for authentication-related operations.
 
     This repository handles retrieving user records by email for login validation
     and updating metadata such as the last login timestamp.
     """
+
+    model = User
 
     async def get_user(self, db: AsyncSession, email: str) -> User | None:
         """Retrieve a user instance by their email address.

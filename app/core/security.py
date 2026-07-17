@@ -11,6 +11,11 @@ from jose import jwt, JWTError
 
 from fastapi import Depends, status
 from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db
+from app.repositories.user_repository import UserRepository
+from app.constants.common_enum import Status
 
 from app.core.config import get_settings
 from app.core.exceptions import AppException
@@ -163,26 +168,28 @@ def decode_token(token: str) -> dict:
         )
 
 
-def get_current_user(token: str = Depends(oauth2_scheme)):
+async def get_current_user(
+    token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)
+):
     """
     Retrieve the currently authenticated user payload.
 
     This dependency extracts the bearer token from the
     Authorization header, validates it, and returns
-    the decoded JWT payload.
+    the fetched User ORM object from the database.
 
     Args:
-        token (str):
-            Access token extracted from the request.
+        token (str): Access token extracted from the request.
+        db (AsyncSession): Database session context.
 
     Returns:
-        dict:
-            Decoded JWT payload containing user information.
+        User:
+            The ORM object of the authenticated user.
 
     Raises:
         AppException:
-            Raised when the token is invalid or the
-            required user identifier is missing.
+            Raised when the token is invalid, user is not found,
+            or user is inactive.
     """
     payload = decode_token(token)
 
@@ -199,7 +206,20 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
             status_code=status.HTTP_401_UNAUTHORIZED, message=AuthMessages.INVALID_TOKEN
         )
 
-    return payload
+    user_repo = UserRepository()
+    user = await user_repo.get_by_id(db, int(user_id))
+
+    if not user:
+        raise AppException(
+            status_code=status.HTTP_401_UNAUTHORIZED, message=AuthMessages.INVALID_TOKEN
+        )
+
+    if user.status != Status.ACTIVE:
+        raise AppException(
+            status_code=status.HTTP_403_FORBIDDEN, message="User account is inactive."
+        )
+
+    return user
 
 
 def refresh_access_token(token: str):
@@ -226,15 +246,11 @@ def refresh_access_token(token: str):
 
     user_id = payload.get("sub")
     token_type = payload.get("type")
-    role = payload.get("role")
-    org_id = payload.get("org_id")
 
     if not user_id or token_type != "refresh":
         raise AppException(
             status_code=status.HTTP_401_UNAUTHORIZED, message=AuthMessages.INVALID_TOKEN
         )
 
-    new_access_token = create_access_token(
-        data={"sub": str(user_id), "role": role, "org_id": org_id}
-    )
+    new_access_token = create_access_token(data={"sub": str(user_id)})
     return new_access_token

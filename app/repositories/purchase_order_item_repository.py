@@ -5,6 +5,7 @@ purchase order, facilitating item creation, pricing lookups against supplier
 catalogs, and bulk line item manipulations.
 """
 
+from app.repositories.base_repository import BaseRepository
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,27 +13,14 @@ from app.db.models.purchase_order_item import PurchaseOrderItem
 from app.db.models.product_supplier import ProductSupplier
 
 
-class PurchaseOrderItemRepository:
+class PurchaseOrderItemRepository(BaseRepository[PurchaseOrderItem]):
     """Manage data access for PurchaseOrderItem records.
 
     Handles creation, bulk deletion, and pricing lookups for items added to
     a purchase order.
     """
 
-    async def create(
-        self, db: AsyncSession, item: PurchaseOrderItem
-    ) -> PurchaseOrderItem:
-        """Stage a single purchase order item for insertion.
-
-        Args:
-            db (AsyncSession): The active asynchronous database session.
-            item (PurchaseOrderItem): The order item to insert.
-
-        Returns:
-            PurchaseOrderItem: The staged item instance.
-        """
-        db.add(item)
-        return item
+    model = PurchaseOrderItem
 
     async def get_supplier_price(
         self, db: AsyncSession, supplier_id: int, product_ids: list[int]

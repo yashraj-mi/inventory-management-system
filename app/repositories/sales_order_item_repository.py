@@ -5,6 +5,7 @@ outbound sales order, handling creation, retrieval, and deletion of products
 requested by a customer.
 """
 
+from app.repositories.base_repository import BaseRepository
 from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,42 +13,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.sales_order_item import SalesOrderItem
 
 
-class SalesOrderItemRepository:
+class SalesOrderItemRepository(BaseRepository[SalesOrderItem]):
     """Manage data access for SalesOrderItem records.
 
     Provides database access methods for line items, supporting inventory
     allocation and order fulfillment processes.
     """
 
-    async def create(
-        self, db: AsyncSession, item_data: SalesOrderItem
-    ) -> SalesOrderItem:
-        """Stage a single sales order line item for insertion.
-
-        Args:
-            db (AsyncSession): The active asynchronous database session.
-            item_data (SalesOrderItem): The order item to insert.
-
-        Returns:
-            SalesOrderItem: The staged item instance.
-        """
-        db.add(item_data)
-        return item_data
-
-    async def get_by_id(self, db: AsyncSession, item_id: int) -> SalesOrderItem | None:
-        """Fetch a specific sales order line item by its primary key.
-
-        Args:
-            db (AsyncSession): The active asynchronous database session.
-            item_id (int): The unique identifier of the line item.
-
-        Returns:
-            SalesOrderItem | None: The requested line item, or None if not found.
-
-        Raises:
-            SQLAlchemyError: If the database operation fails.
-        """
-        return await db.get(SalesOrderItem, item_id)
+    model = SalesOrderItem
 
     async def get_all_by_sales_order(
         self, db: AsyncSession, sales_order_id: int
@@ -73,15 +46,3 @@ class SalesOrderItemRepository:
             )
         )
         return result.all()
-
-    async def delete(self, db: AsyncSession, item_record: SalesOrderItem) -> None:
-        """Stage a sales order line item for deletion from the database.
-
-        Args:
-            db (AsyncSession): The active asynchronous database session.
-            item_record (SalesOrderItem): The item instance to remove.
-
-        Raises:
-            SQLAlchemyError: If the database operation fails.
-        """
-        await db.delete(item_record)

@@ -4,6 +4,7 @@ This module defines routes for creating, retrieving, updating, and deleting
 categories, including organization-specific category filtering.
 """
 
+from app.db.models.user import User
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
@@ -16,11 +17,8 @@ from app.schemas.category import (
     CategoryCreateInternal,
 )
 from app.services.category_service import CategoryService
-from app.dependencies.auth import (
-    ALLOW_ORG_ADMIN,
-    ALLOW_SUPER_ADMIN,
-    verify_tenant_access,
-)
+from app.dependencies.rbac import require_permission
+from app.core.permissions import Permissions
 from app.core.security import get_current_user
 from app.constants.common_enum import CrudMessages
 from app.dependencies.pagination import PaginationParams, get_pagination_params
@@ -33,12 +31,12 @@ router = APIRouter(prefix="/categories", tags=["Categories"])
     "",
     response_model=StandardResponse[CategoryResponse],
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(ALLOW_ORG_ADMIN)],
+    dependencies=[Depends(require_permission(Permissions.CATEGORY_CREATE))],
 )
 async def create_category(
     category_data: CategoryCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     service: CategoryService = Depends(get_category_service),
 ):
     """Create a new category.
@@ -58,7 +56,7 @@ async def create_category(
     Returns:
         StandardResponse[CategoryResponse]: A standardized wrapper with created category details.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     internal_data = CategoryCreateInternal(
         **category_data.model_dump(), organization_id=org_id
     )
@@ -75,61 +73,19 @@ async def create_category(
     "",
     status_code=status.HTTP_200_OK,
     response_model=StandardResponse[PaginatedData[CategoryResponse]],
-    dependencies=[Depends(ALLOW_SUPER_ADMIN)],
-)
-async def get_all_categories(
-    db: AsyncSession = Depends(get_db),
-    params: PaginationParams = Depends(get_pagination_params),
-    service: CategoryService = Depends(get_category_service),
-):
-    """Retrieve all categories.
-
-    Executes a GET request to `/categories` to fetch a paginated list of all categories globally.
-
-    Args:
-        db (AsyncSession): The asynchronous database session dependency.
-        params (PaginationParams): Pagination parameters (page and size).
-        service (CategoryService): The category service layer dependency.
-
-    Raises:
-        HTTPException (403): If the user is not a super admin.
-
-    Returns:
-        StandardResponse[PaginatedData[CategoryResponse]]: A paginated list of all categories.
-    """
-    items, total = await service.get_all_categories(db, params)
-    total_pages = (total + params.size - 1) // params.size
-    data = [CategoryResponse.model_validate(item) for item in items]
-    paginated = PaginatedData(
-        items=data, total=total, page=params.page, size=params.size, pages=total_pages
-    )
-    return StandardResponse(
-        success=True,
-        message=CrudMessages.READ_ALL_SUCCESS.format(module="Category"),
-        data=paginated,
-    )
-
-
-@router.get(
-    "/organization/{organization_id}",
-    status_code=status.HTTP_200_OK,
-    response_model=StandardResponse[PaginatedData[CategoryResponse]],
-    dependencies=[Depends(ALLOW_ORG_ADMIN)],
+    dependencies=[Depends(require_permission(Permissions.CATEGORY_READ))],
 )
 async def get_organization_categories(
-    organization_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     params: PaginationParams = Depends(get_pagination_params),
     service: CategoryService = Depends(get_category_service),
 ):
-    """Retrieve all categories belonging to a specific organization.
+    """Retrieve all categories belonging to the current user's organization.
 
-    Executes a GET request to `/categories/organization/{organization_id}` to fetch
-    categories specific to an organization. Requires tenant access validation.
+    Executes a GET request to `/categories` to fetch categories specific to the organization.
 
     Args:
-        organization_id (int): The unique ID of the organization.
         db (AsyncSession): The asynchronous database session dependency.
         current_user (dict): The authenticated user context.
         params (PaginationParams): Pagination parameters (page and size).
@@ -137,15 +93,14 @@ async def get_organization_categories(
 
     Raises:
         HTTPException (400): If invalid pagination parameters are provided.
-        HTTPException (403): If the user lacks access to the specified organization.
-        HTTPException (404): If the organization is not found.
+        HTTPException (403): If the user lacks access.
 
     Returns:
         StandardResponse[PaginatedData[CategoryResponse]]: A paginated list of categories.
     """
-    verify_tenant_access(current_user, organization_id)
+    org_id = current_user.organization_id
     items, total = await service.get_by_organization(
-        organization_id=organization_id, db=db, params=params
+        organization_id=org_id, db=db, params=params
     )
     total_pages = (total + params.size - 1) // params.size
     data = [CategoryResponse.model_validate(w) for w in items]
@@ -154,7 +109,7 @@ async def get_organization_categories(
     )
     return StandardResponse(
         success=True,
-        message=CrudMessages.ORG_DATA_RETRIEVED.format(module="Categories"),
+        message=CrudMessages.READ_ALL_SUCCESS.format(module="Categories"),
         data=paginated,
     )
 
@@ -163,12 +118,12 @@ async def get_organization_categories(
     "/{category_id}",
     status_code=status.HTTP_200_OK,
     response_model=StandardResponse[CategoryResponse],
-    dependencies=[Depends(ALLOW_ORG_ADMIN)],
+    dependencies=[Depends(require_permission(Permissions.CATEGORY_READ))],
 )
 async def get_category_by_id(
     category_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     service: CategoryService = Depends(get_category_service),
 ):
     """Retrieve a category by its ID.
@@ -189,8 +144,8 @@ async def get_category_by_id(
     Returns:
         StandardResponse[CategoryResponse]: A standardized wrapper with category details.
     """
-    result = await service.get_category(db, category_id)
-    verify_tenant_access(current_user, result.organization_id)
+    org_id = current_user.organization_id
+    result = await service.get_category(db, category_id, org_id)
     category = CategoryResponse.model_validate(result)
     return StandardResponse(
         success=True,
@@ -203,13 +158,13 @@ async def get_category_by_id(
     "/{category_id}",
     status_code=status.HTTP_200_OK,
     response_model=StandardResponse[CategoryResponse],
-    dependencies=[Depends(ALLOW_ORG_ADMIN)],
+    dependencies=[Depends(require_permission(Permissions.CATEGORY_UPDATE))],
 )
 async def update_category(
     category_id: int,
     update_data: CategoryUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     service: CategoryService = Depends(get_category_service),
 ):
     """Update an existing category.
@@ -231,9 +186,8 @@ async def update_category(
     Returns:
         StandardResponse[CategoryResponse]: A standardized wrapper with the updated category details.
     """
-    existing_category = await service.get_category(db, category_id)
-    verify_tenant_access(current_user, existing_category.organization_id)
-    result = await service.update_category(db, category_id, update_data)
+    org_id = current_user.organization_id
+    result = await service.update_category(db, category_id, update_data, org_id)
     category = CategoryResponse.model_validate(result)
     return StandardResponse(
         success=True,
@@ -246,12 +200,12 @@ async def update_category(
     "/{category_id}",
     status_code=status.HTTP_200_OK,
     response_model=StandardResponse[None],
-    dependencies=[Depends(ALLOW_ORG_ADMIN)],
+    dependencies=[Depends(require_permission(Permissions.CATEGORY_DELETE))],
 )
 async def delete_category(
     category_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     service: CategoryService = Depends(get_category_service),
 ):
     """Delete a category by ID.
@@ -272,9 +226,8 @@ async def delete_category(
     Returns:
         StandardResponse[None]: A standardized wrapper indicating successful deletion.
     """
-    existing_category = await service.get_category(db, category_id)
-    verify_tenant_access(current_user, existing_category.organization_id)
-    await service.delete_category(db, category_id)
+    org_id = current_user.organization_id
+    await service.delete_category(db, category_id, org_id)
     return StandardResponse(
         success=True,
         message=CrudMessages.DELETE_SUCCESS.format(module="Category"),

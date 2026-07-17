@@ -4,6 +4,7 @@ This module defines routes for managing the relationships between products
 and suppliers, allowing for mapping, retrieval, updating, and deletion.
 """
 
+from app.db.models.user import User
 from fastapi import APIRouter, Depends, Path, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,7 +16,8 @@ from app.schemas.product_supplier import (
 )
 from app.services.product_supplier_service import ProductSupplierService
 from app.schemas.response import StandardResponse, PaginatedData
-from app.dependencies.auth import ALLOW_ORG_ADMIN
+from app.dependencies.rbac import require_permission
+from app.core.permissions import Permissions
 from app.core.security import get_current_user
 from app.constants.common_enum import CrudMessages
 from app.dependencies.pagination import PaginationParams, get_pagination_params
@@ -33,13 +35,13 @@ router = APIRouter(prefix="/product-suppliers", tags=["Product Suppliers"])
     response_model=StandardResponse[ProductSupplierResponse],
     status_code=status.HTTP_201_CREATED,
     summary="Assign a Supplier to a Product",
-    dependencies=[Depends(ALLOW_ORG_ADMIN)],
+    dependencies=[Depends(require_permission(Permissions.PRODUCT_SUPPLIER_CREATE))],
 )
 async def create_mapping(
     payload: ProductSupplierCreate,
     db: AsyncSession = Depends(get_db),
     service: ProductSupplierService = Depends(get_ps_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> StandardResponse[ProductSupplierResponse]:
     """Create a new mapping assigning a supplier to a product.
 
@@ -58,7 +60,7 @@ async def create_mapping(
     Returns:
         StandardResponse[ProductSupplierResponse]: A standardized wrapper containing the new mapping.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     mapping = await service.create(db, payload, org_id)
     response_data = ProductSupplierResponse.model_validate(mapping)
 
@@ -74,13 +76,13 @@ async def create_mapping(
     response_model=StandardResponse[PaginatedData[ProductSupplierResponse]],
     status_code=status.HTTP_200_OK,
     summary="List Suppliers for a Product",
-    dependencies=[Depends(ALLOW_ORG_ADMIN)],
+    dependencies=[Depends(require_permission(Permissions.PRODUCT_SUPPLIER_READ))],
 )
 async def list_by_product(
     product_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     service: ProductSupplierService = Depends(get_ps_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     params: PaginationParams = Depends(get_pagination_params),
 ) -> StandardResponse[PaginatedData[ProductSupplierResponse]]:
     """Retrieve a paginated list of all suppliers assigned to a specific product.
@@ -101,7 +103,7 @@ async def list_by_product(
     Returns:
         StandardResponse[PaginatedData[ProductSupplierResponse]]: A paginated list of mappings.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     mappings, total = await service.get_by_product(db, product_id, org_id, params)
 
     total_pages = (total + params.size - 1) // params.size
@@ -123,13 +125,13 @@ async def list_by_product(
     response_model=StandardResponse[PaginatedData[ProductSupplierResponse]],
     status_code=status.HTTP_200_OK,
     summary="List Products for a Supplier",
-    dependencies=[Depends(ALLOW_ORG_ADMIN)],
+    dependencies=[Depends(require_permission(Permissions.PRODUCT_SUPPLIER_READ))],
 )
 async def list_by_supplier(
     supplier_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     service: ProductSupplierService = Depends(get_ps_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     params: PaginationParams = Depends(get_pagination_params),
 ) -> StandardResponse[PaginatedData[ProductSupplierResponse]]:
     """Retrieve a paginated list of all products assigned to a specific supplier.
@@ -150,7 +152,7 @@ async def list_by_supplier(
     Returns:
         StandardResponse[PaginatedData[ProductSupplierResponse]]: A paginated list of mappings.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     mappings, total = await service.get_by_supplier(db, supplier_id, org_id, params)
 
     total_pages = (total + params.size - 1) // params.size
@@ -172,14 +174,14 @@ async def list_by_supplier(
     response_model=StandardResponse[ProductSupplierResponse],
     status_code=status.HTTP_200_OK,
     summary="Update a Product-Supplier mapping",
-    dependencies=[Depends(ALLOW_ORG_ADMIN)],
+    dependencies=[Depends(require_permission(Permissions.PRODUCT_SUPPLIER_UPDATE))],
 )
 async def update_mapping(
     payload: ProductSupplierUpdate,
     mapping_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     service: ProductSupplierService = Depends(get_ps_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> StandardResponse[ProductSupplierResponse]:
     """Update specific attributes of a product-supplier mapping.
 
@@ -200,7 +202,7 @@ async def update_mapping(
     Returns:
         StandardResponse[ProductSupplierResponse]: A standardized wrapper containing the updated mapping.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     updated_mapping = await service.update(db, mapping_id, payload, org_id)
     response_data = ProductSupplierResponse.model_validate(updated_mapping)
 
@@ -216,13 +218,13 @@ async def update_mapping(
     response_model=StandardResponse[None],
     status_code=status.HTTP_200_OK,
     summary="Delete a Product-Supplier mapping",
-    dependencies=[Depends(ALLOW_ORG_ADMIN)],
+    dependencies=[Depends(require_permission(Permissions.PRODUCT_SUPPLIER_DELETE))],
 )
 async def delete_mapping(
     mapping_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     service: ProductSupplierService = Depends(get_ps_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> StandardResponse[None]:
     """Permanently delete a mapping between a product and supplier.
 
@@ -242,7 +244,7 @@ async def delete_mapping(
     Returns:
         StandardResponse[None]: A standardized wrapper indicating successful deletion.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     await service.delete(db, mapping_id, org_id)
 
     return StandardResponse(

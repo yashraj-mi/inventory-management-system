@@ -5,6 +5,7 @@ warehouse assignments, including locking mechanisms to prevent race conditions
 during order fulfillment.
 """
 
+from app.repositories.base_repository import BaseRepository
 from collections.abc import Sequence
 
 from sqlalchemy import select, func
@@ -16,40 +17,14 @@ from app.repositories.base import paginate_query
 from app.constants.inventory_enum import InventoryStatus
 
 
-class InventoryRepository:
+class InventoryRepository(BaseRepository[Inventory]):
     """Manage data access for Inventory records.
 
     Handles creation, retrieval, and deletion of inventory items. Supports
     pessimistic locking and aggregation queries to determine available stock.
     """
 
-    async def create(self, db: AsyncSession, inventory_data: Inventory) -> Inventory:
-        """Stage a new inventory record for insertion into the database.
-
-        Args:
-            db (AsyncSession): The active asynchronous database session.
-            inventory_data (Inventory): The inventory model to insert.
-
-        Returns:
-            Inventory: The staged inventory instance.
-        """
-        db.add(inventory_data)
-        return inventory_data
-
-    async def get_by_id(self, db: AsyncSession, inventory_id: int) -> Inventory | None:
-        """Fetch a specific inventory record by its primary key.
-
-        Args:
-            db (AsyncSession): The active asynchronous database session.
-            inventory_id (int): The unique identifier of the inventory record.
-
-        Returns:
-            Inventory | None: The requested inventory item, or None if not found.
-
-        Raises:
-            SQLAlchemyError: If the database query fails.
-        """
-        return await db.get(Inventory, inventory_id)
+    model = Inventory
 
     async def get_by_unique_key(
         self, db: AsyncSession, warehouse_id: int, product_id: int, batch_number: str
@@ -129,18 +104,6 @@ class InventoryRepository:
             .order_by(Inventory.expiry_date)
         )
         return await paginate_query(db, query, params)
-
-    async def delete(self, db: AsyncSession, inventory_record: Inventory) -> None:
-        """Stage an inventory record for deletion from the database.
-
-        Args:
-            db (AsyncSession): The active asynchronous database session.
-            inventory_record (Inventory): The inventory instance to remove.
-
-        Raises:
-            SQLAlchemyError: If the database operation fails.
-        """
-        await db.delete(inventory_record)
 
     async def get_warehouse_inventory_by_product(
         self, db: AsyncSession, product_id: int, warehouse_id: int

@@ -5,7 +5,7 @@ Handles the creation and retrieval of line items associated with a sales order,
 including tracking specific batches and unit prices at the time of sale.
 """
 
-from sqlalchemy.exc import IntegrityError
+from app.db.session_utils import db_transaction
 from sqlalchemy.ext.asyncio import AsyncSession
 from collections.abc import Sequence
 from app.repositories.sales_order_item_repository import SalesOrderItemRepository
@@ -44,34 +44,22 @@ class SalesOrderItemService:
                 unit_price=item.unit_price,
             )
             await self.repo.create(db, record)
-        try:
+        async with db_transaction(db, module="Sales Order Item", action="operation"):
             await db.flush()
-        except IntegrityError:
-            await db.rollback()
-            from fastapi import status
-            from app.core.exceptions import AppException
-            from app.constants.common_enum import CrudMessages
-
-            raise AppException(
-                message=CrudMessages.DB_CONSTRAINT.format(module="Sales Order Item"),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except Exception:
-            await db.rollback()
-            from fastapi import status
-            from app.core.exceptions import AppException
-            from app.constants.common_enum import CrudMessages
-
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Sales Order Item", action="creation"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
 
     async def _get_order_items(
         self, db: AsyncSession, sales_order_id: int
     ) -> Sequence[SalesOrderItem]:
+        """
+        Internal method to fetch raw SalesOrderItem ORM entities.
+
+        Args:
+            db (AsyncSession): Active database session.
+            sales_order_id (int): Target sales order ID.
+
+        Returns:
+            Sequence[SalesOrderItem]: Raw ORM entities for line items.
+        """
         return await self.repo.get_all_by_sales_order(db, sales_order_id)
 
     async def get_order_items(

@@ -5,8 +5,8 @@ Handles the logging of all physical stock movements to ensure an immutable
 audit trail of adjustments, sales, and receipts.
 """
 
+from app.db.session_utils import db_transaction
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from fastapi import status
 
 from app.core.exceptions import AppException
@@ -97,26 +97,12 @@ class InventoryTransactionService:
             created_by=payload.created_by,
         )
 
-        try:
+        async with db_transaction(
+            db, module="Inventory Transaction", action="operation"
+        ):
             await self.repo.create(db, transaction_record)
             await db.flush()
             await db.refresh(transaction_record)
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_CONSTRAINT.format(
-                    module="Inventory Transaction"
-                ),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Inventory Transaction", action="creation"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
         return transaction_record
 
     @log_timing

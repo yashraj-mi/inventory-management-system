@@ -5,10 +5,10 @@ Coordinates the creation, approval, and receipt (full or partial) of purchase or
 Integrates tightly with the InventoryService to accurately reflect received stock.
 """
 
+from app.db.session_utils import db_transaction
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from fastapi import status
 
 from app.core.exceptions import AppException
@@ -118,30 +118,13 @@ class PurchaseOrderService:
             created_by=payload.created_by,
         )
 
-        try:
+        async with db_transaction(db, module="Purchase Order", action="operation"):
             await self.repo.create(db, po_record)
             await db.flush()
             await db.refresh(po_record)
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_CONSTRAINT.format(module="Purchase Order"),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Purchase Order", action="creation"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
         po_items = PurchaseOrderItemCreateInternal(
             po_id=po_record.id, supplier_id=payload.supplier_id, items=payload.items
         )
-        print(po_items)
-        print("*" * 100)
 
         await self.poi_service.create(db, po_items)
 
@@ -268,23 +251,9 @@ class PurchaseOrderService:
         for field, value in update_data.items():
             setattr(record, field, value)
 
-        try:
+        async with db_transaction(db, module="Purchase Order", action="operation"):
             await db.flush()
             await db.refresh(record)
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_CONSTRAINT.format(module="Purchase Order"),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Purchase Order", action="update"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
         return record
 
     @log_timing
@@ -312,7 +281,7 @@ class PurchaseOrderService:
         """
         record = await self._get(db, po_id, actor_org_id)
 
-        if payload.status not in po_allowed_transitions.get(record.status):
+        if payload.status not in po_allowed_transitions.get(record.status, []):
             raise AppException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 message=f"Can not change status from {record.status} to {payload.status.value}.",
@@ -323,26 +292,9 @@ class PurchaseOrderService:
             record.approved_by = actor_id
             record.approved_at = datetime.now(timezone.utc)
 
-        try:
+        async with db_transaction(db, module="Purchase Order", action="operation"):
             await db.flush()
             await db.refresh(record)
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_CONSTRAINT.format(module="Purchase Order"),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            import traceback
-
-            traceback.print_exc()
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Purchase Order", action="status update"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
         return PurchaseOrderResponse.model_validate(record)
 
     @log_timing
@@ -358,25 +310,9 @@ class PurchaseOrderService:
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
-        try:
+        async with db_transaction(db, module="Purchase Order", action="operation"):
             await self.repo.delete(db, record)
             await db.flush()
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_RELATIONAL_CONSTRAINT.format(
-                    module="Purchase Order"
-                ),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Purchase Order", action="deletion"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
 
     @log_timing
     async def update_order_items(
@@ -549,26 +485,9 @@ class PurchaseOrderService:
 
         po_order.status = PurchaseOrderStatus.RECEIVED.value
 
-        try:
+        async with db_transaction(db, module="Purchase Order", action="operation"):
             await db.flush()
             await db.refresh(po_order)
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_CONSTRAINT.format(module="Purchase Order"),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            import traceback
-
-            traceback.print_exc()
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Purchase Order", action="status update"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
         return PurchaseOrderResponse.model_validate(po_order)
 
     @log_timing
@@ -616,24 +535,7 @@ class PurchaseOrderService:
             else PurchaseOrderStatus.PARTIALLY_RECEIVED.value
         )
 
-        try:
+        async with db_transaction(db, module="Purchase Order", action="operation"):
             await db.flush()
             await db.refresh(po_order)
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_CONSTRAINT.format(module="Purchase Order"),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            import traceback
-
-            traceback.print_exc()
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Purchase Order", action="status update"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
         return PurchaseOrderResponse.model_validate(po_order)

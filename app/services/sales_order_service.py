@@ -6,11 +6,11 @@ Calculates stock availability, generates backorders when stock is insufficient, 
 delegates to the inventory service for reservations and real deductions.
 """
 
+from app.db.session_utils import db_transaction
 import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from fastapi import status
 
 from app.core.exceptions import AppException
@@ -34,6 +34,10 @@ from app.schemas.sales_order import PartiallyFulfillPayload
 
 
 class SalesOrderService:
+    """
+    Service layer for managing the lifecycle of sales orders.
+    """
+
     def __init__(
         self,
         repo: SalesOrderRepository,
@@ -59,6 +63,12 @@ class SalesOrderService:
         self.backorder_service = backorder_service
 
     def _generate_so_number(self) -> str:
+        """
+        Generate a unique, chronological order number for a new sales order.
+
+        Returns:
+            str: The generated sales order number.
+        """
         now_str = datetime.now(timezone.utc).strftime("%Y%m%d")
         short_uuid = str(uuid.uuid4())[:8].upper()
         return f"SO-{now_str}-{short_uuid}"
@@ -98,25 +108,10 @@ class SalesOrderService:
             created_by=payload.created_by,
         )
 
-        try:
+        async with db_transaction(db, module="Sales Order", action="operation"):
             await self.repo.create(db, so_record)
             await db.flush()
             await db.refresh(so_record)
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_CONSTRAINT.format(module="Sales Order"),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Sales Order", action="creation"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
         so_items = SalesOrderItemCreateInternal(
             sales_order_id=so_record.id, items=payload.items
         )
@@ -132,11 +127,35 @@ class SalesOrderService:
     async def create(
         self, db: AsyncSession, payload: SalesOrderCreateInternal
     ) -> SalesOrderResponse:
+        """
+        Create a new sales order and return the public response schema.
+
+        Args:
+            db (AsyncSession): Active DB session.
+            payload (SalesOrderCreateInternal): Validated SO creation details.
+
+        Returns:
+            SalesOrderResponse: The newly created sales order.
+        """
         record = await self._create(db, payload)
         return SalesOrderResponse.model_validate(record)
 
     @log_timing
     async def _get(self, db: AsyncSession, so_id: int, actor_org_id: int) -> SalesOrder:
+        """
+        Internal method to fetch a raw SalesOrder ORM entity and validate organization access.
+
+        Args:
+            db (AsyncSession): Active DB session.
+            so_id (int): The ID of the sales order.
+            actor_org_id (int): The organization ID of the requesting user.
+
+        Returns:
+            SalesOrder: The fetched ORM entity.
+
+        Raises:
+            AppException: If not found or if the user lacks access.
+        """
         record = await self.repo.get_by_id(db, so_id)
         if not record:
             raise AppException(
@@ -155,6 +174,17 @@ class SalesOrderService:
     async def get(
         self, db: AsyncSession, so_id: int, actor_org_id: int
     ) -> SalesOrderResponse:
+        """
+        Fetch a single sales order by ID.
+
+        Args:
+            db (AsyncSession): Active DB session.
+            so_id (int): The ID of the sales order.
+            actor_org_id (int): The organization ID of the requesting user.
+
+        Returns:
+            SalesOrderResponse: The requested sales order data.
+        """
         record = await self._get(db, so_id, actor_org_id)
         return SalesOrderResponse.model_validate(record)
 
@@ -195,6 +225,21 @@ class SalesOrderService:
         payload: SalesOrderStatusUpdate,
         actor_org_id: int,
     ) -> SalesOrderResponse:
+        """
+        Update the status of a sales order.
+
+        Args:
+            db (AsyncSession): Active DB session.
+            sales_order_id (int): ID of the target sales order.
+            payload (SalesOrderStatusUpdate): The new status to apply.
+            actor_org_id (int): The organization ID of the requesting user.
+
+        Returns:
+            SalesOrderResponse: The updated sales order.
+
+        Raises:
+            AppException: For invalid transitions or insufficient privileges.
+        """
         order = await self._get(db, sales_order_id, actor_org_id)
 
         if not order:
@@ -211,7 +256,7 @@ class SalesOrderService:
             if not is_fully_confirmed:
                 payload.status = SalesOrderStatus.AWAITING_CONFIRMED
 
-        if payload.status not in so_allowed_transitions.get(order.status):
+        if payload.status not in so_allowed_transitions.get(order.status, []):
             raise AppException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 message=f"Can't change status from {order.status} to {payload.status.value}",
@@ -233,28 +278,24 @@ class SalesOrderService:
 
         order.status = payload.status
 
-        try:
+        async with db_transaction(db, module="Sales Order", action="operation"):
             await db.flush()
             await db.refresh(order)
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_CONSTRAINT.format(module="Sales Order"),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Sales Order", action="status update"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
         return SalesOrderResponse.model_validate(order)
 
     @log_timing
     async def confirm_order(self, db: AsyncSession, sales_order, actor_org_id: int):
+        """
+        Confirm a sales order, reserving stock and automatically generating backorders if necessary.
+
+        Args:
+            db (AsyncSession): Active DB session.
+            sales_order: The sales order ORM entity.
+            actor_org_id (int): The organization ID of the acting user.
+
+        Returns:
+            bool: True if the order can be fully fulfilled from current stock, False otherwise.
+        """
         is_confirmed = True
         for item in sales_order.items:
             available_products = await self.inventory_service.get_warehouse_products(
@@ -285,23 +326,8 @@ class SalesOrderService:
                 await self.backorder_service.create(db, payload)
                 is_confirmed = False
 
-        try:
+        async with db_transaction(db, module="Sales Order", action="operation"):
             await db.flush()
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_CONSTRAINT.format(module="Sales Order"),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Sales Order", action="confirmation"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
         return is_confirmed
 
     async def _process_fulfill_items(
@@ -433,6 +459,17 @@ class SalesOrderService:
     async def fulfill_order(
         self, db: AsyncSession, so_id: int, org_id: int
     ) -> SalesOrderResponse:
+        """
+        Fully fulfill a sales order, consuming all remaining unfulfilled items.
+
+        Args:
+            db (AsyncSession): Active DB session.
+            so_id (int): The ID of the sales order.
+            org_id (int): The organization ID of the requesting user.
+
+        Returns:
+            SalesOrderResponse: The fulfilled sales order.
+        """
         so_order = await self._get(db, so_id, org_id)
 
         if so_order.status == SalesOrderStatus.FULFILLED.value:
@@ -466,23 +503,9 @@ class SalesOrderService:
 
         so_order.status = SalesOrderStatus.FULFILLED.value
 
-        try:
+        async with db_transaction(db, module="Sales Order", action="operation"):
             await db.flush()
             await db.refresh(so_order)
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_CONSTRAINT.format(module="Sales Order"),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Sales Order", action="status update"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
         return SalesOrderResponse.model_validate(so_order)
 
     @log_timing
@@ -493,6 +516,18 @@ class SalesOrderService:
         payload: "PartiallyFulfillPayload",
         org_id: int,
     ) -> SalesOrderResponse:
+        """
+        Partially fulfill a sales order by explicitly stating the quantities fulfilled.
+
+        Args:
+            db (AsyncSession): Active DB session.
+            so_id (int): The ID of the sales order.
+            payload (PartiallyFulfillPayload): Specific product quantities being fulfilled.
+            org_id (int): The organization ID of the requesting user.
+
+        Returns:
+            SalesOrderResponse: The updated sales order reflecting the partial fulfillment.
+        """
         so_order = await self._get(db, so_id, org_id)
 
         if so_order.status not in (
@@ -516,21 +551,7 @@ class SalesOrderService:
             else SalesOrderStatus.PARTIALLY_FULFILLED.value
         )
 
-        try:
+        async with db_transaction(db, module="Sales Order", action="operation"):
             await db.flush()
             await db.refresh(so_order)
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_CONSTRAINT.format(module="Sales Order"),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Sales Order", action="status update"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
         return SalesOrderResponse.model_validate(so_order)

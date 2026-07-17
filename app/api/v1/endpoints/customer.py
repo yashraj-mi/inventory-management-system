@@ -4,6 +4,7 @@ This module defines routes for managing customer records, including creation,
 retrieval, updating, and deletion, restricted by user organizations.
 """
 
+from app.db.models.user import User
 from fastapi import APIRouter, Depends, Path, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,7 +17,8 @@ from app.schemas.customer import (
 )
 from app.services.customer_service import CustomerService
 from app.schemas.response import StandardResponse, PaginatedData
-from app.dependencies.auth import ALLOW_COMMON_ORG
+from app.dependencies.rbac import require_permission
+from app.core.permissions import Permissions
 from app.core.security import get_current_user
 from app.constants.common_enum import CrudMessages
 from app.dependencies.pagination import PaginationParams, get_pagination_params
@@ -32,13 +34,13 @@ router = APIRouter(prefix="/customers", tags=["Customers"])
     response_model=StandardResponse[CustomerResponse],
     status_code=status.HTTP_201_CREATED,
     summary="Add Customer Record",
-    dependencies=[Depends(ALLOW_COMMON_ORG)],
+    dependencies=[Depends(require_permission(Permissions.CUSTOMER_CREATE))],
 )
 async def create_customer(
     payload: CustomerCreate,
     db: AsyncSession = Depends(get_db),
     service: CustomerService = Depends(get_customer_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> StandardResponse[CustomerResponse]:
     """Create a new customer for the current user's organization.
 
@@ -57,7 +59,7 @@ async def create_customer(
     Returns:
         StandardResponse[CustomerResponse]: A standardized wrapper containing the new customer.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     internal_payload = CustomerCreateInternal(
         **payload.model_dump(), organization_id=org_id
     )
@@ -77,12 +79,12 @@ async def create_customer(
     response_model=StandardResponse[PaginatedData[CustomerResponse]],
     status_code=status.HTTP_200_OK,
     summary="List Customers",
-    dependencies=[Depends(ALLOW_COMMON_ORG)],
+    dependencies=[Depends(require_permission(Permissions.CUSTOMER_READ))],
 )
 async def list_customers(
     db: AsyncSession = Depends(get_db),
     service: CustomerService = Depends(get_customer_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     params: PaginationParams = Depends(get_pagination_params),
 ) -> StandardResponse[PaginatedData[CustomerResponse]]:
     """Retrieve a paginated list of all customers in the current user's organization.
@@ -102,7 +104,7 @@ async def list_customers(
     Returns:
         StandardResponse[PaginatedData[CustomerResponse]]: A paginated list of customers.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     records, total = await service.get_all_by_org(db, org_id, params)
 
     total_pages = (total + params.size - 1) // params.size
@@ -124,13 +126,13 @@ async def list_customers(
     response_model=StandardResponse[CustomerResponse],
     status_code=status.HTTP_200_OK,
     summary="Get a Customer Record",
-    dependencies=[Depends(ALLOW_COMMON_ORG)],
+    dependencies=[Depends(require_permission(Permissions.CUSTOMER_READ))],
 )
 async def get_customer(
     customer_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     service: CustomerService = Depends(get_customer_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> StandardResponse[CustomerResponse]:
     """Retrieve a specific customer record by ID.
 
@@ -150,7 +152,7 @@ async def get_customer(
     Returns:
         StandardResponse[CustomerResponse]: A standardized wrapper containing customer details.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     record = await service.get(db, customer_id, org_id)
     response_data = CustomerResponse.model_validate(record)
 
@@ -166,14 +168,14 @@ async def get_customer(
     response_model=StandardResponse[CustomerResponse],
     status_code=status.HTTP_200_OK,
     summary="Update a Customer Record",
-    dependencies=[Depends(ALLOW_COMMON_ORG)],
+    dependencies=[Depends(require_permission(Permissions.CUSTOMER_UPDATE))],
 )
 async def update_customer(
     payload: CustomerUpdate,
     customer_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     service: CustomerService = Depends(get_customer_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> StandardResponse[CustomerResponse]:
     """Update specific attributes of a customer.
 
@@ -194,7 +196,7 @@ async def update_customer(
     Returns:
         StandardResponse[CustomerResponse]: A standardized wrapper with the updated customer details.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     updated_record = await service.update(db, customer_id, payload, org_id)
     response_data = CustomerResponse.model_validate(updated_record)
 
@@ -210,13 +212,13 @@ async def update_customer(
     response_model=StandardResponse[None],
     status_code=status.HTTP_200_OK,
     summary="Delete a Customer Record",
-    dependencies=[Depends(ALLOW_COMMON_ORG)],
+    dependencies=[Depends(require_permission(Permissions.CUSTOMER_DELETE))],
 )
 async def delete_customer(
     customer_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     service: CustomerService = Depends(get_customer_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> StandardResponse[None]:
     """Permanently delete a customer record.
 
@@ -236,7 +238,7 @@ async def delete_customer(
     Returns:
         StandardResponse[None]: A standardized wrapper indicating successful deletion.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     await service.delete(db, customer_id, org_id)
 
     return StandardResponse(

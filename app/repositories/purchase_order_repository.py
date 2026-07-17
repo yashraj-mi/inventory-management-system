@@ -5,6 +5,7 @@ logic needed to manage incoming stock requests and procurement from external
 suppliers.
 """
 
+from app.repositories.base_repository import BaseRepository
 from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,40 +15,14 @@ from app.dependencies.pagination import PaginationParams
 from app.repositories.base import paginate_query
 
 
-class PurchaseOrderRepository:
+class PurchaseOrderRepository(BaseRepository[PurchaseOrder]):
     """Manage data access for PurchaseOrder entities.
 
     Handles creation, lookup by specific business identifiers, and paginated
     retrieval for warehouse-scoped purchase tracking.
     """
 
-    async def create(self, db: AsyncSession, po_data: PurchaseOrder) -> PurchaseOrder:
-        """Stage a new purchase order record for insertion.
-
-        Args:
-            db (AsyncSession): The active asynchronous database session.
-            po_data (PurchaseOrder): The purchase order entity to insert.
-
-        Returns:
-            PurchaseOrder: The staged purchase order instance.
-        """
-        db.add(po_data)
-        return po_data
-
-    async def get_by_id(self, db: AsyncSession, po_id: int) -> PurchaseOrder | None:
-        """Fetch a specific purchase order by its primary key.
-
-        Args:
-            db (AsyncSession): The active asynchronous database session.
-            po_id (int): The unique identifier of the purchase order.
-
-        Returns:
-            PurchaseOrder | None: The requested purchase order, or None if not found.
-
-        Raises:
-            SQLAlchemyError: If the database operation fails.
-        """
-        return await db.get(PurchaseOrder, po_id)
+    model = PurchaseOrder
 
     async def get_by_po_number(
         self, db: AsyncSession, po_number: str
@@ -95,15 +70,3 @@ class PurchaseOrderRepository:
             .order_by(PurchaseOrder.id.desc())
         )
         return await paginate_query(db, query, params)
-
-    async def delete(self, db: AsyncSession, po_record: PurchaseOrder) -> None:
-        """Stage a purchase order for deletion from the database.
-
-        Args:
-            db (AsyncSession): The active asynchronous database session.
-            po_record (PurchaseOrder): The purchase order instance to remove.
-
-        Raises:
-            SQLAlchemyError: If the database operation fails.
-        """
-        await db.delete(po_record)

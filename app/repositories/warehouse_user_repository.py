@@ -5,6 +5,7 @@ removing permissions that authorize specific users to operate within specific
 warehouses.
 """
 
+from app.repositories.base_repository import BaseRepository
 from typing import Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -13,12 +14,14 @@ from app.dependencies.pagination import PaginationParams
 from app.repositories.base import paginate_query
 
 
-class WarehouseUserRepository:
+class WarehouseUserRepository(BaseRepository[WarehouseUsers]):
     """Manage data access for WarehouseUser linking records.
 
     Handles the bidirectional lookup and assignment of personnel to distinct
     physical locations within an organization.
     """
+
+    model = WarehouseUsers
 
     async def get_assignment(
         self, db: AsyncSession, warehouse_id: int, user_id: int
@@ -80,17 +83,3 @@ class WarehouseUserRepository:
         """
         db.add(assignment)
         return assignment
-
-    async def delete(self, db: AsyncSession, assignment: WarehouseUsers) -> None:
-        """Stage a warehouse user assignment row for deletion.
-
-        Effectively revokes a user's access to operate within the linked warehouse.
-
-        Args:
-            db (AsyncSession): The active asynchronous database session.
-            assignment (WarehouseUsers): The mapping entity to delete.
-
-        Raises:
-            SQLAlchemyError: If the deletion staging fails.
-        """
-        await db.delete(assignment)

@@ -4,6 +4,7 @@ This module defines routes for managing supplier records, allowing creation,
 listing, updating, and deletion scoped by the user's organization.
 """
 
+from app.db.models.user import User
 from fastapi import APIRouter, Depends, Path, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,7 +17,8 @@ from app.schemas.supplier import (
 )
 from app.services.supplier_service import SupplierService
 from app.schemas.response import StandardResponse, PaginatedData
-from app.dependencies.auth import ALLOW_ORG_ADMIN, verify_tenant_access
+from app.dependencies.rbac import require_permission
+from app.core.permissions import Permissions
 from app.core.security import get_current_user
 from app.constants.common_enum import CrudMessages
 from app.dependencies.pagination import PaginationParams, get_pagination_params
@@ -32,13 +34,13 @@ router = APIRouter(prefix="/suppliers", tags=["Suppliers"])
     response_model=StandardResponse[SupplierResponse],
     status_code=status.HTTP_201_CREATED,
     summary="Create a Supplier",
-    dependencies=[Depends(ALLOW_ORG_ADMIN)],
+    dependencies=[Depends(require_permission(Permissions.SUPPLIER_CREATE))],
 )
 async def create_supplier(
     payload: SupplierCreate,
     db: AsyncSession = Depends(get_db),
     service: SupplierService = Depends(get_supplier_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> StandardResponse[SupplierResponse]:
     """Create a new supplier for the current user's organization.
 
@@ -57,7 +59,7 @@ async def create_supplier(
     Returns:
         StandardResponse[SupplierResponse]: A standardized wrapper containing the new supplier details.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     internal_payload = SupplierCreateInternal(
         **payload.model_dump(), organization_id=org_id
     )
@@ -76,12 +78,12 @@ async def create_supplier(
     response_model=StandardResponse[PaginatedData[SupplierResponse]],
     status_code=status.HTTP_200_OK,
     summary="List all Suppliers",
-    dependencies=[Depends(ALLOW_ORG_ADMIN)],
+    dependencies=[Depends(require_permission(Permissions.SUPPLIER_READ))],
 )
 async def list_suppliers(
     db: AsyncSession = Depends(get_db),
     service: SupplierService = Depends(get_supplier_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     params: PaginationParams = Depends(get_pagination_params),
 ) -> StandardResponse[PaginatedData[SupplierResponse]]:
     """Retrieve a paginated list of all suppliers for the current user's organization.
@@ -101,7 +103,7 @@ async def list_suppliers(
     Returns:
         StandardResponse[PaginatedData[SupplierResponse]]: A paginated list of suppliers.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     suppliers, total = await service.get_all_by_org(db, org_id, params)
 
     total_pages = (total + params.size - 1) // params.size
@@ -123,13 +125,13 @@ async def list_suppliers(
     response_model=StandardResponse[SupplierResponse],
     status_code=status.HTTP_200_OK,
     summary="Get a Supplier by ID",
-    dependencies=[Depends(ALLOW_ORG_ADMIN)],
+    dependencies=[Depends(require_permission(Permissions.SUPPLIER_READ))],
 )
 async def get_supplier(
     supplier_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     service: SupplierService = Depends(get_supplier_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> StandardResponse[SupplierResponse]:
     """Retrieve details of a specific supplier.
 
@@ -149,8 +151,7 @@ async def get_supplier(
     Returns:
         StandardResponse[SupplierResponse]: A standardized wrapper containing the supplier details.
     """
-    supplier = await service.get(db, supplier_id)
-    verify_tenant_access(current_user, supplier.organization_id)
+    supplier = await service.get(db, supplier_id, current_user.organization_id)
 
     supplier_response = SupplierResponse.model_validate(supplier)
     return StandardResponse(
@@ -165,14 +166,14 @@ async def get_supplier(
     response_model=StandardResponse[SupplierResponse],
     status_code=status.HTTP_200_OK,
     summary="Update a Supplier",
-    dependencies=[Depends(ALLOW_ORG_ADMIN)],
+    dependencies=[Depends(require_permission(Permissions.SUPPLIER_UPDATE))],
 )
 async def update_supplier(
     payload: SupplierUpdate,
     supplier_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     service: SupplierService = Depends(get_supplier_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> StandardResponse[SupplierResponse]:
     """Update specific fields of an existing supplier.
 
@@ -193,10 +194,9 @@ async def update_supplier(
     Returns:
         StandardResponse[SupplierResponse]: A standardized wrapper containing the updated supplier.
     """
-    existing_supplier = await service.get(db, supplier_id)
-    verify_tenant_access(current_user, existing_supplier.organization_id)
-
-    updated_supplier = await service.update(db, supplier_id, payload)
+    updated_supplier = await service.update(
+        db, supplier_id, payload, current_user.organization_id
+    )
     supplier_response = SupplierResponse.model_validate(updated_supplier)
 
     return StandardResponse(
@@ -211,13 +211,13 @@ async def update_supplier(
     response_model=StandardResponse[None],
     status_code=status.HTTP_200_OK,
     summary="Delete a Supplier",
-    dependencies=[Depends(ALLOW_ORG_ADMIN)],
+    dependencies=[Depends(require_permission(Permissions.SUPPLIER_DELETE))],
 )
 async def delete_supplier(
     supplier_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     service: SupplierService = Depends(get_supplier_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> StandardResponse[None]:
     """Permanently delete a supplier.
 
@@ -237,10 +237,7 @@ async def delete_supplier(
     Returns:
         StandardResponse[None]: A standardized wrapper indicating successful deletion.
     """
-    existing_supplier = await service.get(db, supplier_id)
-    verify_tenant_access(current_user, existing_supplier.organization_id)
-
-    await service.delete(db, supplier_id)
+    await service.delete(db, supplier_id, current_user.organization_id)
 
     return StandardResponse(
         success=True,

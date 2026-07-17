@@ -4,6 +4,7 @@ This module defines routes for managing product catalog records, including
 creation, listing, updating, and deletion within an organization context.
 """
 
+from app.db.models.user import User
 from fastapi import APIRouter, Depends, Path, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,7 +17,8 @@ from app.schemas.product import (
 )
 from app.services.product_service import ProductService
 from app.schemas.response import StandardResponse, PaginatedData
-from app.dependencies.auth import ALLOW_ORG_ADMIN
+from app.dependencies.rbac import require_permission
+from app.core.permissions import Permissions
 from app.core.security import get_current_user
 from app.constants.common_enum import CrudMessages
 from app.dependencies.pagination import PaginationParams, get_pagination_params
@@ -32,13 +34,13 @@ router = APIRouter(prefix="/products", tags=["Products"])
     response_model=StandardResponse[ProductResponse],
     status_code=status.HTTP_201_CREATED,
     summary="Create a Product",
-    dependencies=[Depends(ALLOW_ORG_ADMIN)],
+    dependencies=[Depends(require_permission(Permissions.PRODUCT_CREATE))],
 )
 async def create_product(
     payload: ProductCreate,
     db: AsyncSession = Depends(get_db),
     service: ProductService = Depends(get_product_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> StandardResponse[ProductResponse]:
     """Create a new product for the current user's organization.
 
@@ -57,7 +59,7 @@ async def create_product(
     Returns:
         StandardResponse[ProductResponse]: A standardized wrapper containing the newly created product.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     internal_payload = ProductCreateInternal(
         **payload.model_dump(),
         organization_id=org_id,
@@ -77,12 +79,12 @@ async def create_product(
     response_model=StandardResponse[PaginatedData[ProductResponse]],
     status_code=status.HTTP_200_OK,
     summary="List all Products",
-    dependencies=[Depends(ALLOW_ORG_ADMIN)],
+    dependencies=[Depends(require_permission(Permissions.PRODUCT_READ))],
 )
 async def list_products(
     db: AsyncSession = Depends(get_db),
     service: ProductService = Depends(get_product_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     params: PaginationParams = Depends(get_pagination_params),
 ) -> StandardResponse[PaginatedData[ProductResponse]]:
     """Retrieve a paginated list of all products for the current user's organization.
@@ -102,7 +104,7 @@ async def list_products(
     Returns:
         StandardResponse[PaginatedData[ProductResponse]]: A paginated list of products.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     products, total = await service.get_all_by_org(db, org_id, params)
 
     total_pages = (total + params.size - 1) // params.size
@@ -124,13 +126,13 @@ async def list_products(
     response_model=StandardResponse[ProductResponse],
     status_code=status.HTTP_200_OK,
     summary="Get a Product by ID",
-    dependencies=[Depends(ALLOW_ORG_ADMIN)],
+    dependencies=[Depends(require_permission(Permissions.PRODUCT_READ))],
 )
 async def get_product(
     product_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     service: ProductService = Depends(get_product_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> StandardResponse[ProductResponse]:
     """Retrieve details of a specific product.
 
@@ -150,7 +152,7 @@ async def get_product(
     Returns:
         StandardResponse[ProductResponse]: A standardized wrapper containing the product details.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     product = await service.get(db, product_id, org_id)
 
     product_response = ProductResponse.model_validate(product)
@@ -166,14 +168,14 @@ async def get_product(
     response_model=StandardResponse[ProductResponse],
     status_code=status.HTTP_200_OK,
     summary="Update a Product",
-    dependencies=[Depends(ALLOW_ORG_ADMIN)],
+    dependencies=[Depends(require_permission(Permissions.PRODUCT_UPDATE))],
 )
 async def update_product(
     payload: ProductUpdate,
     product_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     service: ProductService = Depends(get_product_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> StandardResponse[ProductResponse]:
     """Update specific fields of an existing product.
 
@@ -194,7 +196,7 @@ async def update_product(
     Returns:
         StandardResponse[ProductResponse]: A standardized wrapper containing the updated product.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     updated_product = await service.update(db, product_id, payload, org_id)
     product_response = ProductResponse.model_validate(updated_product)
 
@@ -210,13 +212,13 @@ async def update_product(
     response_model=StandardResponse[None],
     status_code=status.HTTP_200_OK,
     summary="Delete a Product",
-    dependencies=[Depends(ALLOW_ORG_ADMIN)],
+    dependencies=[Depends(require_permission(Permissions.PRODUCT_DELETE))],
 )
 async def delete_product(
     product_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     service: ProductService = Depends(get_product_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> StandardResponse[None]:
     """Permanently delete a product.
 
@@ -236,7 +238,7 @@ async def delete_product(
     Returns:
         StandardResponse[None]: A standardized wrapper indicating successful deletion.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     await service.delete(db, product_id, org_id)
 
     return StandardResponse(

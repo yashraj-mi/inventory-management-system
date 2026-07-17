@@ -6,7 +6,7 @@ users, warehouses, products, and transactions under a single business account.
 """
 
 from __future__ import annotations
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 from sqlalchemy import ForeignKey, Enum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -46,7 +46,7 @@ class Organization(BaseModel):
         nullable=False,
         default=OrganizationStatus.PENDING,
     )
-    action_by: Mapped[Optional[int]] = mapped_column(
+    action_by: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", use_alter=True), nullable=True, index=True
     )
 

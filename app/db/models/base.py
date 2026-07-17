@@ -5,7 +5,8 @@ Establishes the foundational SQLAlchemy declarative base class used across the
 application to ensure consistent primary key structure and automated timestamp tracking.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime
+import zoneinfo
 from sqlalchemy import DateTime
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -32,13 +33,13 @@ class BaseModel(Base):
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=func.timezone("UTC", func.now()),
+        server_default=func.timezone("Asia/Kolkata", func.now()),
         nullable=False,
     )
 
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=func.timezone("UTC", func.now()),
-        onupdate=lambda: datetime.now(timezone.utc),
+        server_default=func.timezone("Asia/Kolkata", func.now()),
+        onupdate=lambda: datetime.now(zoneinfo.ZoneInfo("Asia/Kolkata")),
         nullable=False,
     )

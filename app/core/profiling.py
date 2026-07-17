@@ -34,6 +34,16 @@ def log_timing(func: F) -> F:
 
     @functools.wraps(func)
     async def wrapper(*args, **kwargs):
+        """
+        Execute the wrapped function and record its execution time.
+
+        Args:
+            *args: Positional arguments for the wrapped function.
+            **kwargs: Keyword arguments for the wrapped function.
+
+        Returns:
+            The result of the wrapped function.
+        """
         start = time.perf_counter()
         try:
             result = await func(*args, **kwargs)

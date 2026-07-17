@@ -21,6 +21,7 @@ from app.db.models.supplier import Supplier
 from app.db.models.user import User
 from app.db.models.warehouse import Warehouse
 from app.db.models.warehouse_users import WarehouseUsers
+from app.db.models.rbac import Role, Permission, RolePermission, UserRole
 
 __all__ = [
     "Backorder",
@@ -39,4 +40,8 @@ __all__ = [
     "User",
     "Warehouse",
     "WarehouseUsers",
+    "Role",
+    "Permission",
+    "RolePermission",
+    "UserRole",
 ]

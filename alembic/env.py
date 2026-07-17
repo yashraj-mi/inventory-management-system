@@ -25,6 +25,10 @@ from app.core.config import get_settings
 from app.core.database import Base
 
 # Import all models here so Alembic can discover them
+print("=" * 50)
+print(Base)
+print(Base.metadata.tables.keys())
+print("=" * 50)
 target_metadata = Base.metadata
 
 # Dynamically set the database URL from settings

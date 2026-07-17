@@ -5,8 +5,8 @@ Handles business logic and data persistence for customers. Enforces validation
 rules such as organization association, and uniqueness of email and phone fields.
 """
 
+from app.db.session_utils import db_transaction
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from fastapi import status
 from collections.abc import Sequence
 
@@ -100,24 +100,10 @@ class CustomerService:
             address=payload.address,
         )
 
-        try:
+        async with db_transaction(db, module="Customer", action="operation"):
             await self.repo.create(db, customer)
             await db.flush()
             await db.refresh(customer)
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_CONSTRAINT.format(module="Customer"),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Customer", action="creation"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
         return customer
 
     @log_timing
@@ -141,7 +127,7 @@ class CustomerService:
                 message=CrudMessages.ORG_NOT_FOUND.format(module="Customer"),
                 status_code=status.HTTP_404_NOT_FOUND,
             )
-        return await self.repo.get_all(db, org_id, params)
+        return await self.repo.get_by_organization(db, org_id, params)
 
     @log_timing
     async def get(self, db: AsyncSession, customer_id: int, org_id: int) -> Customer:
@@ -218,23 +204,9 @@ class CustomerService:
         for field, value in update_data.items():
             setattr(customer, field, value)
 
-        try:
+        async with db_transaction(db, module="Customer", action="operation"):
             await db.flush()
             await db.refresh(customer)
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_CONSTRAINT.format(module="Customer"),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Customer", action="update"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
         return customer
 
     @log_timing
@@ -254,20 +226,6 @@ class CustomerService:
             AppException: If related records prevent deletion (409) or on unknown DB errors.
         """
         customer = await self.get(db, customer_id, org_id)
-        try:
+        async with db_transaction(db, module="Customer", action="operation"):
             await self.repo.delete(db, customer)
             await db.flush()
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_RELATIONAL_CONSTRAINT.format(module="Customer"),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Customer", action="deletion"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )

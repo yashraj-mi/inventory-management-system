@@ -6,7 +6,6 @@ details of storage facilities where inventory is kept.
 """
 
 import datetime
-from typing import Optional
 from pydantic import Field, BaseModel, ConfigDict
 from app.constants.warehouse_enum import WarehouseStatus
 
@@ -79,13 +78,13 @@ class WarehouseUpdate(BaseModel):
     Used in request bodies for PATCH endpoints. All fields are optional.
 
     Attributes:
-        name (Optional[str]): New name of the facility.
-        code (Optional[str]): New unique alphanumeric code.
-        address (Optional[str]): New physical location address.
-        status (Optional[WarehouseStatus]): New operational status.
+        name (str | None): New name of the facility.
+        code (str | None): New unique alphanumeric code.
+        address (str | None): New physical location address.
+        status (WarehouseStatus | None): New operational status.
     """
 
-    name: Optional[str] = Field(None, min_length=2)
-    code: Optional[str] = None
-    address: Optional[str] = Field(None, min_length=30)
-    status: Optional[WarehouseStatus] = None
+    name: str | None = Field(None, min_length=2)
+    code: str | None = None
+    address: str | None = Field(None, min_length=30)
+    status: WarehouseStatus | None = None

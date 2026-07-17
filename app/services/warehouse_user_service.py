@@ -5,10 +5,10 @@ Controls the physical location assignments for staff, determining which
 warehouses a user has permissions to operate in.
 """
 
+from app.db.session_utils import db_transaction
 from typing import Sequence
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from app.repositories.warehouse_user_repository import WarehouseUserRepository
 from app.db.models.warehouse_users import WarehouseUsers
 from app.schemas.warehouse_user import WarehouseUserAssign
@@ -87,23 +87,9 @@ class WarehouseUserService:
             warehouse_id=warehouse_id, user_id=payload.user_id, assigned_by=actor_id
         )
 
-        try:
+        async with db_transaction(db, module="Warehouse User", action="operation"):
             assignment = await self.repo.add(db, new_assignment)
             await db.flush()
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=WarehouseUserMessages.ALREADY_ASSIGNED,
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Warehouse User", action="assignment"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
         return assignment
 
     @log_timing
@@ -128,22 +114,6 @@ class WarehouseUserService:
                 status_code=status.HTTP_404_NOT_FOUND,
             )
 
-        try:
+        async with db_transaction(db, module="Warehouse User", action="operation"):
             await self.repo.delete(db, assignment)
             await db.flush()
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_RELATIONAL_CONSTRAINT.format(
-                    module="Warehouse User"
-                ),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Warehouse User", action="removal"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )

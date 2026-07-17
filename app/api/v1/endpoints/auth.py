@@ -12,7 +12,6 @@ from app.schemas.auth import UserLogin, LoginResponse, TokenResponse, Token
 from app.schemas.response import StandardResponse
 from app.services.auth_service import AuthService
 from app.constants.auth_enum import AuthMessages
-
 from app.dependencies.auth import get_auth_service
 
 # Initialize the router with a dedicated prefix and documentation tags

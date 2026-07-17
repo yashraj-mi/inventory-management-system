@@ -7,8 +7,8 @@ InventoryService to track availability and SalesOrderService to
 update status upon allocation.
 """
 
+from app.db.session_utils import db_transaction
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from fastapi import status
 from app.core.exceptions import AppException
 from app.core.profiling import log_timing
@@ -18,7 +18,6 @@ from app.db.models.backorder import Backorder
 from app.constants.sales_order_enum import (
     BackorderStatus,
     SalesOrderStatus,
-    BackorderMessages,
 )
 from app.schemas.sales_order import SalesOrderStatusUpdate
 from app.services.inventory_service import InventoryService
@@ -50,13 +49,16 @@ class BackorderService:
         self.inventory_service = inventory_service
         self.sales_order_service = sales_order_service
 
-    async def _create(self, db: AsyncSession, payload: BackorderCreate) -> Backorder:
+    async def _create(
+        self, db: AsyncSession, payload: BackorderCreate, actor_org_id: int
+    ) -> Backorder:
         """
         Create a new backorder record directly in the database.
 
         Args:
             db: Active database session.
             payload: Details of the backorder to create.
+            actor_org_id: ID of the organization making the request.
 
         Returns:
             The created Backorder entity.
@@ -64,6 +66,15 @@ class BackorderService:
         Raises:
             AppException: If foreign keys are invalid (409) or database error occurs (500).
         """
+        so = await self.sales_order_service.get(
+            db, payload.sales_order_id, actor_org_id
+        )
+        if not so:
+            raise AppException(
+                message="Sales order not found or access denied.",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
         record = Backorder(
             sales_order_id=payload.sales_order_id,
             warehouse_id=payload.warehouse_id,
@@ -73,27 +84,14 @@ class BackorderService:
             status=payload.status.value,
         )
 
-        try:
+        async with db_transaction(db, module="Backorder", action="operation"):
             await self.repo.create(db, record)
             await db.flush()
             await db.refresh(record)
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=BackorderMessages.CREATE_FK_ERROR,
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=BackorderMessages.CREATE_UNEXPECTED_ERROR,
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
         return record
 
     async def create(
-        self, db: AsyncSession, payload: BackorderCreate
+        self, db: AsyncSession, payload: BackorderCreate, actor_org_id: int
     ) -> BackorderResponse:
         """
         Create a new backorder and return its public schema.
@@ -101,11 +99,12 @@ class BackorderService:
         Args:
             db: Active database session.
             payload: Details of the backorder to create.
+            actor_org_id: ID of the organization making the request.
 
         Returns:
             The validated BackorderResponse schema.
         """
-        record = await self._create(db, payload)
+        record = await self._create(db, payload, actor_org_id)
         return BackorderResponse.model_validate(record)
 
     async def _get_by_id(self, db: AsyncSession, backorder_id: int) -> Backorder | None:
@@ -122,7 +121,7 @@ class BackorderService:
         return await self.repo.get_by_id(db, backorder_id)
 
     async def get_by_id(
-        self, db: AsyncSession, backorder_id: int
+        self, db: AsyncSession, backorder_id: int, actor_org_id: int
     ) -> BackorderResponse | None:
         """
         Retrieve a backorder and return its public schema.
@@ -136,6 +135,14 @@ class BackorderService:
         """
         record = await self._get_by_id(db, backorder_id)
         if record:
+            so = await self.sales_order_service.get(
+                db, record.sales_order_id, actor_org_id
+            )
+            if not so:
+                raise AppException(
+                    message="Sales order not found or access denied.",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                )
             return BackorderResponse.model_validate(record)
         return None
 
@@ -201,20 +208,8 @@ class BackorderService:
 
                     backorder.quantity_pending -= available_products
 
-                try:
+                async with db_transaction(db, module="Backorder", action="operation"):
                     await db.flush()
-                except IntegrityError:
-                    await db.rollback()
-                    raise AppException(
-                        message=BackorderMessages.CREATE_FK_ERROR,
-                        status_code=status.HTTP_409_CONFLICT,
-                    )
-                except SQLAlchemyError:
-                    await db.rollback()
-                    raise AppException(
-                        message=BackorderMessages.CREATE_UNEXPECTED_ERROR,
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    )
 
     async def cancel_backorders_for_so(self, db: AsyncSession, sales_order_id: int):
         """
@@ -227,17 +222,5 @@ class BackorderService:
         backorders = await self.repo.get_by_sales_order(db, sales_order_id)
         for bo in backorders:
             bo.status = BackorderStatus.CANCELLED.value
-        try:
+        async with db_transaction(db, module="Backorder", action="operation"):
             await db.flush()
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=BackorderMessages.CREATE_FK_ERROR,
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=BackorderMessages.CREATE_UNEXPECTED_ERROR,
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )

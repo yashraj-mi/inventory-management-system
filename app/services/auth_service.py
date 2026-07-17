@@ -7,8 +7,8 @@ associated user and organization are active, managing session tokens
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import SQLAlchemyError
 from fastapi import status
+from app.db.session_utils import db_transaction
 from app.core.security import (
     PasswordManager,
     create_access_token,
@@ -83,33 +83,23 @@ class AuthService:
             )
 
         # Check if the user's organization is active
-        org = await self.org_repo.get_by_id(db, existing_user.organization_id)
-        if org and org.status != OrganizationStatus.ACTIVE:
-            raise AppException(
-                message=AuthMessages.INACTIVE_ORG,
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
+        if existing_user.organization_id is not None:
+            org = await self.org_repo.get_by_id(db, existing_user.organization_id)
+            if org and org.status != OrganizationStatus.ACTIVE:
+                raise AppException(
+                    message=AuthMessages.INACTIVE_ORG,
+                    status_code=status.HTTP_403_FORBIDDEN,
+                )
 
         # Generate authorization and session refresh tokens
-        token_data_payload = {
-            "sub": str(existing_user.id),
-            "role": str(existing_user.role.value),
-            "org_id": existing_user.organization_id,
-        }
+        token_data_payload = {"sub": str(existing_user.id)}
         access_token = create_access_token(data=token_data_payload)
         refresh_token = create_refresh_token(data=token_data_payload)
 
         # Update the user's active connection metadata timestamp
-        try:
+        async with db_transaction(db, module="Auth", action="login"):
             await self.auth_repo.update_last_login(db=db, user=existing_user)
             await db.flush()
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=AuthMessages.DB_UNEXPECTED_UPDATE,
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
         token_data = LoginResponse(
             access_token=access_token, refresh_token=refresh_token
         )

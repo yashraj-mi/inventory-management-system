@@ -5,6 +5,7 @@ database query logic from the business services. Backorders track products that
 could not be fulfilled immediately during sales order processing.
 """
 
+from app.repositories.base_repository import BaseRepository
 from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,43 +14,14 @@ from app.db.models.backorder import Backorder
 from app.constants.sales_order_enum import BackorderStatus
 
 
-class BackorderRepository:
+class BackorderRepository(BaseRepository[Backorder]):
     """Manage data access operations for the Backorder entity.
 
     Handles creation, retrieval, and deletion of backorder records, as well as
     fetching waiting backorders by product or sales order.
     """
 
-    async def create(self, db: AsyncSession, backorder_data: Backorder) -> Backorder:
-        """Add a new backorder record to the database session.
-
-        Stages a backorder entity to be inserted into the database. Does not
-        commit the transaction, leaving that to the calling service.
-
-        Args:
-            db (AsyncSession): The active asynchronous database session.
-            backorder_data (Backorder): The backorder model instance to insert.
-
-        Returns:
-            Backorder: The staged backorder instance.
-        """
-        db.add(backorder_data)
-        return backorder_data
-
-    async def get_by_id(self, db: AsyncSession, backorder_id: int) -> Backorder | None:
-        """Retrieve a specific backorder by its primary key.
-
-        Args:
-            db (AsyncSession): The active asynchronous database session.
-            backorder_id (int): The unique identifier of the backorder.
-
-        Returns:
-            Backorder | None: The requested backorder, or None if not found.
-
-        Raises:
-            SQLAlchemyError: If a database operation fails.
-        """
-        return await db.get(Backorder, backorder_id)
+    model = Backorder
 
     async def get_all_by_sales_order(
         self, db: AsyncSession, sales_order_id: int
@@ -98,21 +70,6 @@ class BackorderRepository:
         )
         result = await db.scalars(query)
         return list(result.all())
-
-    async def delete(self, db: AsyncSession, backorder_record: Backorder) -> None:
-        """Remove a backorder record from the database session.
-
-        Stages a specific backorder entity for deletion. The actual removal
-        happens when the transaction is committed by the calling service.
-
-        Args:
-            db (AsyncSession): The active asynchronous database session.
-            backorder_record (Backorder): The backorder instance to delete.
-
-        Raises:
-            SQLAlchemyError: If a database operation fails.
-        """
-        await db.delete(backorder_record)
 
     async def get_by_product(
         self, db: AsyncSession, product_id: int, warehouse_id: int

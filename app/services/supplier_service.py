@@ -5,8 +5,8 @@ Coordinates supplier creation, updates, and deletion while enforcing organizatio
 scoping and unique constraints on contact details.
 """
 
+from app.db.session_utils import db_transaction
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from fastapi import status
 
 from app.core.exceptions import AppException
@@ -101,24 +101,10 @@ class SupplierService:
             phone=payload.phone,
         )
 
-        try:
+        async with db_transaction(db, module="Supplier", action="operation"):
             await self.supplier_repo.create(db, supplier)
             await db.flush()
             await db.refresh(supplier)
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_CONSTRAINT.format(module="Supplier"),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Supplier", action="creation"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
         return supplier
 
     @log_timing
@@ -142,16 +128,17 @@ class SupplierService:
                 message=CrudMessages.ORG_NOT_FOUND.format(module="Suppliers"),
                 status_code=status.HTTP_404_NOT_FOUND,
             )
-        return await self.supplier_repo.get_all(db, org_id, params)
+        return await self.supplier_repo.get_by_organization(db, org_id, params)
 
     @log_timing
-    async def get(self, db: AsyncSession, supplier_id: int) -> Supplier:
+    async def get(self, db: AsyncSession, supplier_id: int, org_id: int) -> Supplier:
         """
-        Retrieve a supplier entity by its ID.
+        Retrieve a supplier entity by its ID and validate ownership.
 
         Args:
             db: Active DB session context.
             supplier_id: ID of the supplier to fetch.
+            org_id: ID of the organization requesting the fetch.
 
         Returns:
             The Supplier entity.
@@ -160,7 +147,7 @@ class SupplierService:
             AppException: If the supplier does not exist (404).
         """
         supplier = await self.supplier_repo.get_by_id(db, supplier_id)
-        if not supplier:
+        if not supplier or supplier.organization_id != org_id:
             raise AppException(
                 message=CrudMessages.NOT_FOUND.format(module="Supplier"),
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -169,7 +156,7 @@ class SupplierService:
 
     @log_timing
     async def update(
-        self, db: AsyncSession, supplier_id: int, payload: SupplierUpdate
+        self, db: AsyncSession, supplier_id: int, payload: SupplierUpdate, org_id: int
     ) -> Supplier:
         """
         Update an existing supplier's details.
@@ -180,16 +167,20 @@ class SupplierService:
             db: Active DB session context.
             supplier_id: ID of the supplier to update.
             payload: Partial data payload for the update.
+            org_id: ID of the organization making the update.
 
         Returns:
             The updated Supplier entity.
         """
-        supplier = await self.get(db, supplier_id)
+        supplier = await self.get(db, supplier_id, org_id)
 
         update_data = payload.model_dump(exclude_unset=True)
 
+        email = update_data.get("email")
+        phone = update_data.get("phone")
+
         # If email or phone is updated, check for conflicts
-        if "email" in update_data and update_data["email"] != supplier.email:
+        if email and email != supplier.email:
             if await self.supplier_repo.get_by_email(
                 db, supplier.organization_id, update_data["email"]
             ):
@@ -199,7 +190,7 @@ class SupplierService:
                     ),
                     status_code=status.HTTP_409_CONFLICT,
                 )
-        if "phone" in update_data and update_data["phone"] != supplier.phone:
+        if phone and phone != supplier.phone:
             if await self.supplier_repo.get_by_phone(
                 db, supplier.organization_id, update_data["phone"]
             ):
@@ -213,27 +204,13 @@ class SupplierService:
         for field, value in update_data.items():
             setattr(supplier, field, value)
 
-        try:
+        async with db_transaction(db, module="Supplier", action="operation"):
             await db.flush()
             await db.refresh(supplier)
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_CONSTRAINT.format(module="Supplier"),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Supplier", action="update"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
         return supplier
 
     @log_timing
-    async def delete(self, db: AsyncSession, supplier_id: int) -> None:
+    async def delete(self, db: AsyncSession, supplier_id: int, org_id: int) -> None:
         """
         Delete a supplier entity from the system.
 
@@ -242,25 +219,12 @@ class SupplierService:
         Args:
             db: Active DB session context.
             supplier_id: ID of the supplier to delete.
+            org_id: ID of the organization making the deletion.
 
         Raises:
             AppException: On relational constraint failures (409) or unknown DB errors.
         """
-        supplier = await self.get(db, supplier_id)
-        try:
+        supplier = await self.get(db, supplier_id, org_id)
+        async with db_transaction(db, module="Supplier", action="operation"):
             await self.supplier_repo.delete(db, supplier)
             await db.flush()
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_RELATIONAL_CONSTRAINT.format(module="Supplier"),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Supplier", action="deletion"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )

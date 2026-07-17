@@ -4,22 +4,17 @@ This module defines routes for user creation, retrieval, updating, and deletion,
 along with context-based organization scoping.
 """
 
+from app.db.models.user import User
 from fastapi import APIRouter, Depends, Path, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
-import secrets
 
 from app.core.database import get_db
 from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateInternal
 from app.services.user_service import UserService
 from app.services.email_service import email_service
 from app.schemas.response import StandardResponse
-from app.dependencies.auth import (
-    ALLOW_ADMIN_OR_MANAGER,
-    ALLOW_SUPER_ADMIN,
-    ALLOW_SUPER_ADMIN_OR_ORG_ADMIN,
-    ALLOW_COMMON_ORG,
-    verify_tenant_access,
-)
+from app.dependencies.rbac import require_permission
+from app.core.permissions import Permissions
 from app.constants.common_enum import CrudMessages
 from app.core.security import get_current_user
 from app.schemas.response import PaginatedData
@@ -37,14 +32,14 @@ router = APIRouter(prefix="/users", tags=["Users"])
     summary="Create User",
     description="Create a new user in the system.",
     response_description="Created user envelope.",
-    dependencies=[Depends(ALLOW_SUPER_ADMIN_OR_ORG_ADMIN)],
+    dependencies=[Depends(require_permission(Permissions.USER_CREATE))],
 )
 async def create_user(
     payload: UserCreate,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     service: UserService = Depends(get_user_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> StandardResponse[UserResponse]:
     """Create a new user in the system.
 
@@ -64,13 +59,16 @@ async def create_user(
     Returns:
         StandardResponse[UserResponse]: A standardized wrapper containing the created user.
     """
-    org_id = current_user.get("org_id")
-    temp_password = secrets.token_urlsafe(16)
+    org_id = current_user.organization_id
+    # temp_password = secrets.token_urlsafe(16)
+    temp_password = "12345678"
     internal_payload = UserCreateInternal(
         **payload.model_dump(), organization_id=org_id, password=temp_password
     )
 
-    user_data = await service.create_user(db=db, payload=internal_payload)
+    user_data = await service.create_user(
+        db=db, payload=internal_payload, current_user=current_user
+    )
 
     email_service.send_credentials_email(
         background_tasks=background_tasks,
@@ -92,69 +90,21 @@ async def create_user(
     response_model=StandardResponse[PaginatedData[UserResponse]],
     status_code=status.HTTP_200_OK,
     summary="Get All Users",
-    description="Retrieve all users from the system.",
+    description="Retrieve all users from the current organization.",
     response_description="List of wrapped users.",
-    dependencies=[Depends(ALLOW_SUPER_ADMIN)],
+    dependencies=[Depends(require_permission(Permissions.USER_READ))],
 )
 async def get_all_users(
     db: AsyncSession = Depends(get_db),
     service: UserService = Depends(get_user_service),
+    current_user: User = Depends(get_current_user),
     params: PaginationParams = Depends(get_pagination_params),
 ):
-    """Retrieve a paginated list of all users from the system.
+    """Retrieve a paginated list of all users linked to the current organization.
 
-    Executes a GET request to `/users` to fetch globally registered users.
-
-    Args:
-        db (AsyncSession): The asynchronous database session dependency.
-        service (UserService): The user service layer dependency.
-        params (PaginationParams): Pagination parameters.
-
-    Raises:
-        HTTPException (403): If the user lacks super admin privileges.
-
-    Returns:
-        StandardResponse[PaginatedData[UserResponse]]: A paginated list of all users.
-    """
-    users, total = await service.get_all_users(db, params)
-    total_pages = (total + params.size - 1) // params.size
-    # Convert Sequence elements cleanly into Pydantic representations
-    validated_users = [UserResponse.model_validate(u) for u in users]
-    data = PaginatedData(
-        items=validated_users,
-        total=total,
-        page=params.page,
-        size=params.size,
-        pages=total_pages,
-    )
-    return StandardResponse(
-        success=True,
-        message=CrudMessages.READ_ALL_SUCCESS.format(module="User"),
-        data=data,
-    )
-
-
-@router.get(
-    "/{organization_id}/users",
-    response_model=StandardResponse[PaginatedData[UserResponse]],
-    status_code=status.HTTP_200_OK,
-    summary="Get all users of an organization",
-    description="Validates target organization credentials and retrieves all user profiles linked to its ecosystem context loop partition.",
-    dependencies=[Depends(ALLOW_ADMIN_OR_MANAGER)],
-)
-async def get_organization_users(
-    organization_id: int,
-    db: AsyncSession = Depends(get_db),
-    service: UserService = Depends(get_user_service),
-    current_user: dict = Depends(get_current_user),
-    params: PaginationParams = Depends(get_pagination_params),
-):
-    """Retrieve a paginated list of all users linked to an organization.
-
-    Executes a GET request to `/{organization_id}/users` to fetch organization staff.
+    Executes a GET request to `/users` to fetch organization staff.
 
     Args:
-        organization_id (int): The unique ID of the organization.
         db (AsyncSession): The asynchronous database session dependency.
         service (UserService): The user service layer dependency.
         current_user (dict): The authenticated user context.
@@ -168,14 +118,10 @@ async def get_organization_users(
     Returns:
         StandardResponse[PaginatedData[UserResponse]]: A paginated list of users.
     """
-    verify_tenant_access(current_user, organization_id)
-    # Operational handoff straight down onto application service bounds
-    user_data, total = await service.get_org_users(
-        db=db, org_id=organization_id, params=params
-    )
+    org_id = current_user.organization_id
+    user_data, total = await service.get_org_users(db=db, org_id=org_id, params=params)
     total_pages = (total + params.size - 1) // params.size
 
-    # Explicit conversion wrapping Pydantic data schemas cleanly inside your custom global layout
     validated_users = [UserResponse.model_validate(user) for user in user_data]
     data = PaginatedData(
         items=validated_users,
@@ -187,7 +133,7 @@ async def get_organization_users(
 
     return StandardResponse(
         success=True,
-        message=CrudMessages.ORG_DATA_RETRIEVED.format(module="Users"),
+        message=CrudMessages.READ_ALL_SUCCESS.format(module="Users"),
         data=data,
     )
 
@@ -199,13 +145,13 @@ async def get_organization_users(
     summary="Get User By ID",
     description="Retrieve a specific user using its unique identifier.",
     response_description="User profile envelope.",
-    dependencies=[Depends(ALLOW_COMMON_ORG)],
+    dependencies=[Depends(require_permission(Permissions.USER_READ))],
 )
 async def get_user(
     user_id: int = Path(..., gt=0, description="Unique user identifier."),
     db: AsyncSession = Depends(get_db),
     service: UserService = Depends(get_user_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> StandardResponse[UserResponse]:
     """Retrieve a specific user by its unique identifier.
 
@@ -225,8 +171,9 @@ async def get_user(
     Returns:
         StandardResponse[UserResponse]: A standardized wrapper containing the user details.
     """
-    user_data = await service.get_user(db=db, user_id=user_id)
-    verify_tenant_access(current_user, user_data.organization_id)
+    user_data = await service.get_user(
+        db=db, user_id=user_id, org_id=current_user.organization_id
+    )
     user_data = UserResponse.model_validate(user_data)
     return StandardResponse(
         success=True,
@@ -242,14 +189,14 @@ async def get_user(
     summary="Update User",
     description="Update an existing user's information.",
     response_description="Updated user profile envelope.",
-    dependencies=[Depends(ALLOW_ADMIN_OR_MANAGER)],
+    dependencies=[Depends(require_permission(Permissions.USER_UPDATE))],
 )
 async def update_user(
     payload: UserUpdate,
     user_id: int = Path(..., gt=0, description="Unique user identifier."),
     db: AsyncSession = Depends(get_db),
     service: UserService = Depends(get_user_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> StandardResponse[UserResponse]:
     """Update an existing user's information.
 
@@ -270,9 +217,9 @@ async def update_user(
     Returns:
         StandardResponse[UserResponse]: A standardized wrapper containing the updated user details.
     """
-    existing_user = await service.get_user(db=db, user_id=user_id)
-    verify_tenant_access(current_user, existing_user.organization_id)
-    updated_user = await service.update_user(db=db, user_id=user_id, payload=payload)
+    updated_user = await service.update_user(
+        db=db, user_id=user_id, payload=payload, current_user=current_user
+    )
     updated_user = UserResponse.model_validate(updated_user)
     return StandardResponse(
         success=True,
@@ -286,13 +233,13 @@ async def update_user(
     status_code=status.HTTP_200_OK,
     summary="Delete User",
     description="Delete a user from the system.",
-    dependencies=[Depends(ALLOW_ADMIN_OR_MANAGER)],
+    dependencies=[Depends(require_permission(Permissions.USER_DELETE))],
 )
 async def delete_user(
     user_id: int = Path(..., gt=0, description="Unique user identifier."),
     db: AsyncSession = Depends(get_db),
     service: UserService = Depends(get_user_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> StandardResponse[None]:
     """Delete a user from the system.
 
@@ -312,9 +259,9 @@ async def delete_user(
     Returns:
         StandardResponse[None]: A standardized wrapper indicating successful deletion.
     """
-    existing_user = await service.get_user(db=db, user_id=user_id)
-    verify_tenant_access(current_user, existing_user.organization_id)
-    await service.delete_user(db=db, user_id=user_id)
+    await service.delete_user(
+        db=db, user_id=user_id, org_id=current_user.organization_id
+    )
     return StandardResponse(
         success=True,
         message=CrudMessages.DELETE_SUCCESS.format(module="User"),

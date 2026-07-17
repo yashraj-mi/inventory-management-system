@@ -21,8 +21,10 @@ class PaginationParams(BaseModel):
         params.offset  # → 5 (skips the first 5 rows)
     """
 
-    page: int = Field(..., description="The current page number (1-indexed).")
-    size: int = Field(..., description="Number of items to return per page.")
+    page: int = Field(..., ge=1, description="The current page number (1-indexed).")
+    size: int = Field(
+        ..., ge=1, le=100, description="Number of items to return per page."
+    )
 
     @property
     def offset(self) -> int:

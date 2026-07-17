@@ -4,6 +4,7 @@ This module defines routes for assigning, listing, and removing users from
 specific warehouses.
 """
 
+from app.db.models.user import User
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,13 +14,13 @@ from app.services.warehouse_user_service import WarehouseUserService
 from app.schemas.response import StandardResponse
 from app.core.security import get_current_user
 from app.core.exceptions import AppException
-from app.dependencies.auth import ALLOW_ADMIN_OR_MANAGER, verify_tenant_access
+from app.dependencies.rbac import require_permission
+from app.core.permissions import Permissions
 from app.services.warehouse_service import WarehouseService
 from app.constants.warehouse_user_enum import WarehouseUserMessages
 from app.constants.auth_enum import AuthMessages
 from app.schemas.response import PaginatedData
 from app.dependencies.pagination import PaginationParams, get_pagination_params
-
 from app.dependencies.warehouse_user import get_warehouse_user_service
 from app.dependencies.warehouse import get_warehouse_service
 
@@ -30,7 +31,7 @@ router = APIRouter(prefix="/warehouses", tags=["Warehouse Users"])
     "/{warehouse_id}/users",
     status_code=status.HTTP_200_OK,
     response_model=StandardResponse[PaginatedData[WarehouseUserResponse]],
-    dependencies=[Depends(ALLOW_ADMIN_OR_MANAGER)],
+    dependencies=[Depends(require_permission(Permissions.WAREHOUSE_USER_READ))],
     summary="List all users assigned to a warehouse",
 )
 async def list_warehouse_users(
@@ -38,7 +39,7 @@ async def list_warehouse_users(
     db: AsyncSession = Depends(get_db),
     service: WarehouseUserService = Depends(get_warehouse_user_service),
     warehouse_svc: WarehouseService = Depends(get_warehouse_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     params: PaginationParams = Depends(get_pagination_params),
 ):
     """Fetch a collection of all user tracking records explicitly linked to a warehouse.
@@ -60,8 +61,7 @@ async def list_warehouse_users(
     Returns:
         StandardResponse[PaginatedData[WarehouseUserResponse]]: A paginated list of warehouse assignments.
     """
-    warehouse = await warehouse_svc.get_warehouse(db, warehouse_id)
-    verify_tenant_access(current_user, warehouse.organization_id)
+    await warehouse_svc.get_warehouse(db, warehouse_id, current_user.organization_id)
     assignments, total = await service.list_users_in_warehouse(db, warehouse_id, params)
     total_pages = (total + params.size - 1) // params.size
     data = [WarehouseUserResponse.model_validate(a) for a in assignments]
@@ -79,7 +79,7 @@ async def list_warehouse_users(
     "/{warehouse_id}/users",
     response_model=StandardResponse[WarehouseUserResponse],
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(ALLOW_ADMIN_OR_MANAGER)],
+    dependencies=[Depends(require_permission(Permissions.WAREHOUSE_USER_ASSIGN))],
     summary="Assign a user to a warehouse",
 )
 async def assign_user(
@@ -88,7 +88,7 @@ async def assign_user(
     db: AsyncSession = Depends(get_db),
     service: WarehouseUserService = Depends(get_warehouse_user_service),
     warehouse_svc: WarehouseService = Depends(get_warehouse_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Map an isolated staff user ID context directly onto a structural target warehouse location.
 
@@ -111,15 +111,14 @@ async def assign_user(
     Returns:
         StandardResponse[WarehouseUserResponse]: A standardized wrapper containing the newly created assignment.
     """
-    sub = current_user.get("sub")
+    sub = str(current_user.id)
     if not sub:
         raise AppException(
             message=AuthMessages.INVALID_TOKEN, status_code=status.HTTP_401_UNAUTHORIZED
         )
     actor_id = int(sub)
 
-    warehouse = await warehouse_svc.get_warehouse(db, warehouse_id)
-    verify_tenant_access(current_user, warehouse.organization_id)
+    await warehouse_svc.get_warehouse(db, warehouse_id, current_user.organization_id)
 
     assignment = await service.assign_user_to_warehouse(
         db, warehouse_id, payload, actor_id
@@ -136,7 +135,7 @@ async def assign_user(
     "/{warehouse_id}/users/{user_id}",
     status_code=status.HTTP_200_OK,
     response_model=StandardResponse[None],
-    dependencies=[Depends(ALLOW_ADMIN_OR_MANAGER)],
+    dependencies=[Depends(require_permission(Permissions.WAREHOUSE_USER_REMOVE))],
     summary="Remove a user from a warehouse",
 )
 async def remove_user(
@@ -145,7 +144,7 @@ async def remove_user(
     db: AsyncSession = Depends(get_db),
     service: WarehouseUserService = Depends(get_warehouse_user_service),
     warehouse_svc: WarehouseService = Depends(get_warehouse_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Unlink a targeting user row context from mapping paths matching back to the specified warehouse.
 
@@ -166,8 +165,7 @@ async def remove_user(
     Returns:
         StandardResponse[None]: A standardized wrapper indicating successful removal.
     """
-    warehouse = await warehouse_svc.get_warehouse(db, warehouse_id)
-    verify_tenant_access(current_user, warehouse.organization_id)
+    await warehouse_svc.get_warehouse(db, warehouse_id, current_user.organization_id)
     await service.remove_user_from_warehouse(db, warehouse_id, user_id)
     return StandardResponse(
         success=True,

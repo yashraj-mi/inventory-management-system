@@ -5,8 +5,8 @@ Manages relationships between products and the suppliers who provide them.
 Tracks supplier-specific SKUs and cost prices for replenishment logic.
 """
 
+from app.db.session_utils import db_transaction
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from fastapi import status
 from collections.abc import Sequence
 
@@ -99,24 +99,10 @@ class ProductSupplierService:
             cost_price=payload.cost_price,
         )
 
-        try:
+        async with db_transaction(db, module="Product Supplier", action="operation"):
             await self.repo.create(db, mapping)
             await db.flush()
             await db.refresh(mapping)
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_CONSTRAINT.format(module="ProductSupplier"),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="ProductSupplier", action="creation"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
         return mapping
 
     @log_timing
@@ -206,23 +192,9 @@ class ProductSupplierService:
         for field, value in update_data.items():
             setattr(mapping, field, value)
 
-        try:
+        async with db_transaction(db, module="Product Supplier", action="operation"):
             await db.flush()
             await db.refresh(mapping)
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_CONSTRAINT.format(module="ProductSupplier"),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="ProductSupplier", action="update"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
         return mapping
 
     @log_timing
@@ -242,22 +214,6 @@ class ProductSupplierService:
                 status_code=status.HTTP_404_NOT_FOUND,
             )
 
-        try:
+        async with db_transaction(db, module="Product Supplier", action="operation"):
             await self.repo.delete(db, mapping)
             await db.flush()
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_RELATIONAL_CONSTRAINT.format(
-                    module="ProductSupplier"
-                ),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="ProductSupplier", action="deletion"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )

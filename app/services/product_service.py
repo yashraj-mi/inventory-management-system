@@ -5,8 +5,8 @@ Handles creation, updating, retrieval, and deletion of products. Enforces SKU
 uniqueness and manages product-to-category constraints within a multi-tenant environment.
 """
 
+from app.db.session_utils import db_transaction
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from fastapi import status
 
 from app.core.exceptions import AppException
@@ -114,25 +114,10 @@ class ProductService:
             status=payload.status,
         )
 
-        try:
+        async with db_transaction(db, module="Product", action="operation"):
             await self.product_repo.create(db, product)
             await db.flush()
             await db.refresh(product)
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_CONSTRAINT.format(module="Product"),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Product", action="creation"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
         if payload.supplier_id and payload.supplier_sku:
             product_supplier_data = ProductSupplierCreate(
                 product_id=product.id,
@@ -173,7 +158,7 @@ class ProductService:
                 message=CrudMessages.ORG_NOT_FOUND.format(module="Products"),
                 status_code=status.HTTP_404_NOT_FOUND,
             )
-        return await self.product_repo.get_all(db, org_id, params)
+        return await self.product_repo.get_by_organization(db, org_id, params)
 
     @log_timing
     async def get(
@@ -250,23 +235,9 @@ class ProductService:
         for field, value in update_data.items():
             setattr(product, field, value)
 
-        try:
+        async with db_transaction(db, module="Product", action="operation"):
             await db.flush()
             await db.refresh(product)
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_CONSTRAINT.format(module="Product"),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Product", action="update"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
         return product
 
     @log_timing
@@ -288,20 +259,6 @@ class ProductService:
             AppException: If related records prevent deletion (409) or unknown DB error.
         """
         product = await self.get(db, product_id, actor_org_id)
-        try:
+        async with db_transaction(db, module="Product", action="operation"):
             await self.product_repo.delete(db, product)
             await db.flush()
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_RELATIONAL_CONSTRAINT.format(module="Product"),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Product", action="deletion"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )

@@ -4,6 +4,7 @@ This module defines routes for managing inventory records, stock adjustments,
 and retrieving inventory aggregated by product or warehouse.
 """
 
+from app.db.models.user import User
 from fastapi import APIRouter, Depends, Path, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,7 +17,8 @@ from app.schemas.inventory import (
 )
 from app.services.inventory_service import InventoryService
 from app.schemas.response import StandardResponse, PaginatedData
-from app.dependencies.auth import ALLOW_COMMON_ORG
+from app.dependencies.rbac import require_permission
+from app.core.permissions import Permissions
 from app.dependencies.auth import get_current_user
 from app.constants.inventory_enum import InventoryMessages
 from app.constants.common_enum import CrudMessages
@@ -33,13 +35,13 @@ router = APIRouter(prefix="/inventory", tags=["Inventory"])
     response_model=StandardResponse[InventoryResponse],
     status_code=status.HTTP_201_CREATED,
     summary="Add Inventory Record",
-    dependencies=[Depends(ALLOW_COMMON_ORG)],
+    dependencies=[Depends(require_permission(Permissions.INVENTORY_CREATE))],
 )
 async def create_inventory(
     payload: InventoryCreate,
     db: AsyncSession = Depends(get_db),
     service: InventoryService = Depends(get_inventory_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> StandardResponse[InventoryResponse]:
     """Create a new inventory record for a product in a warehouse.
 
@@ -59,7 +61,7 @@ async def create_inventory(
     Returns:
         StandardResponse[InventoryResponse]: A standardized wrapper containing the inventory record.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     response_data = await service.create(db, payload, org_id)
 
     return StandardResponse(
@@ -74,14 +76,14 @@ async def create_inventory(
     response_model=StandardResponse[InventoryResponse],
     status_code=status.HTTP_200_OK,
     summary="Adjust Inventory Stock",
-    dependencies=[Depends(ALLOW_COMMON_ORG)],
+    dependencies=[Depends(require_permission(Permissions.INVENTORY_CREATE))],
 )
 async def adjust_inventory_stock(
     payload: InventoryAdjustPayload,
     inventory_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     service: InventoryService = Depends(get_inventory_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> StandardResponse[InventoryResponse]:
     """Adjust the stock level of an inventory record manually.
 
@@ -103,8 +105,8 @@ async def adjust_inventory_stock(
     Returns:
         StandardResponse[InventoryResponse]: A standardized wrapper with the updated inventory record.
     """
-    org_id = current_user.get("org_id")
-    actor_id = current_user.get("sub")
+    org_id = current_user.organization_id
+    actor_id = str(current_user.id)
 
     # We need the inventory record first to get the warehouse and product details
     record = await service.get(db, inventory_id, org_id)
@@ -133,13 +135,13 @@ async def adjust_inventory_stock(
     response_model=StandardResponse[PaginatedData[InventoryResponse]],
     status_code=status.HTTP_200_OK,
     summary="List Inventory in a Warehouse",
-    dependencies=[Depends(ALLOW_COMMON_ORG)],
+    dependencies=[Depends(require_permission(Permissions.INVENTORY_READ))],
 )
 async def list_by_warehouse(
     warehouse_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     service: InventoryService = Depends(get_inventory_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     params: PaginationParams = Depends(get_pagination_params),
 ) -> StandardResponse[PaginatedData[InventoryResponse]]:
     """Retrieve a paginated list of all inventory records inside a specific warehouse.
@@ -160,7 +162,7 @@ async def list_by_warehouse(
     Returns:
         StandardResponse[PaginatedData[InventoryResponse]]: A paginated list of inventory stocks.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     records, total = await service.get_by_warehouse(db, warehouse_id, org_id, params)
 
     total_pages = (total + params.size - 1) // params.size
@@ -185,13 +187,13 @@ async def list_by_warehouse(
     response_model=StandardResponse[PaginatedData[InventoryResponse]],
     status_code=status.HTTP_200_OK,
     summary="List Inventory globally for a Product",
-    dependencies=[Depends(ALLOW_COMMON_ORG)],
+    dependencies=[Depends(require_permission(Permissions.INVENTORY_READ))],
 )
 async def list_by_product(
     product_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     service: InventoryService = Depends(get_inventory_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     params: PaginationParams = Depends(get_pagination_params),
 ) -> StandardResponse[PaginatedData[InventoryResponse]]:
     """Retrieve a paginated list of all inventory records globally for a specific product.
@@ -212,7 +214,7 @@ async def list_by_product(
     Returns:
         StandardResponse[PaginatedData[InventoryResponse]]: A paginated list of inventory stocks.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     records, total = await service.get_by_product(db, product_id, org_id, params)
 
     total_pages = (total + params.size - 1) // params.size
@@ -237,13 +239,13 @@ async def list_by_product(
     response_model=StandardResponse[InventoryResponse],
     status_code=status.HTTP_200_OK,
     summary="Get an Inventory Record",
-    dependencies=[Depends(ALLOW_COMMON_ORG)],
+    dependencies=[Depends(require_permission(Permissions.INVENTORY_READ))],
 )
 async def get_inventory(
     inventory_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     service: InventoryService = Depends(get_inventory_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> StandardResponse[InventoryResponse]:
     """Retrieve a specific inventory record by ID.
 
@@ -263,7 +265,7 @@ async def get_inventory(
     Returns:
         StandardResponse[InventoryResponse]: A standardized wrapper containing the inventory details.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     response_data = await service.get(db, inventory_id, org_id)
 
     return StandardResponse(
@@ -278,14 +280,14 @@ async def get_inventory(
     response_model=StandardResponse[InventoryResponse],
     status_code=status.HTTP_200_OK,
     summary="Update an Inventory Record",
-    dependencies=[Depends(ALLOW_COMMON_ORG)],
+    dependencies=[Depends(require_permission(Permissions.INVENTORY_UPDATE))],
 )
 async def update_inventory(
     payload: InventoryUpdate,
     inventory_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     service: InventoryService = Depends(get_inventory_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> StandardResponse[InventoryResponse]:
     """Update specific attributes of an inventory record.
 
@@ -306,7 +308,7 @@ async def update_inventory(
     Returns:
         StandardResponse[InventoryResponse]: A standardized wrapper with the updated inventory details.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     response_data = await service.update(db, inventory_id, payload, org_id)
 
     return StandardResponse(
@@ -321,13 +323,13 @@ async def update_inventory(
     response_model=StandardResponse[None],
     status_code=status.HTTP_200_OK,
     summary="Delete an Inventory Record",
-    dependencies=[Depends(ALLOW_COMMON_ORG)],
+    dependencies=[Depends(require_permission(Permissions.INVENTORY_DELETE))],
 )
 async def delete_inventory(
     inventory_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     service: InventoryService = Depends(get_inventory_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> StandardResponse[None]:
     """Permanently delete an inventory record.
 
@@ -347,7 +349,7 @@ async def delete_inventory(
     Returns:
         StandardResponse[None]: A standardized wrapper indicating successful deletion.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     await service.delete(db, inventory_id, org_id)
 
     return StandardResponse(

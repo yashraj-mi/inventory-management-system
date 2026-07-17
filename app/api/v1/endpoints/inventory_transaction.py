@@ -4,6 +4,7 @@ This module defines routes for logging and retrieving inventory stock adjustment
 including queries by warehouse and product.
 """
 
+from app.db.models.user import User
 from fastapi import APIRouter, Depends, Path, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,7 +17,9 @@ from app.schemas.inventory_transaction import (
 )
 from app.services.inventory_transaction_service import InventoryTransactionService
 from app.dependencies.inventory_transaction import get_inventory_transaction_service
-from app.dependencies.auth import get_current_user, ALLOW_ADMIN_OR_MANAGER
+from app.dependencies.rbac import require_permission
+from app.core.permissions import Permissions
+from app.dependencies.auth import get_current_user
 from app.dependencies.pagination import PaginationParams, get_pagination_params
 
 
@@ -28,13 +31,15 @@ router = APIRouter(prefix="/inventory-transactions", tags=["Inventory Transactio
     response_model=StandardResponse[InventoryTransactionResponse],
     status_code=status.HTTP_201_CREATED,
     summary="Create Inventory Transaction",
-    dependencies=[Depends(ALLOW_ADMIN_OR_MANAGER)],
+    dependencies=[
+        Depends(require_permission(Permissions.INVENTORY_TRANSACTION_CREATE))
+    ],
 )
 async def create_inventory_transaction(
     payload: InventoryTransactionCreate,
     db: AsyncSession = Depends(get_db),
     service: InventoryTransactionService = Depends(get_inventory_transaction_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Create a new inventory transaction record.
 
@@ -53,11 +58,11 @@ async def create_inventory_transaction(
     Returns:
         StandardResponse[InventoryTransactionResponse]: A standardized wrapper containing the transaction.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
 
     transaction_data = payload.model_dump()
     if transaction_data.get("created_by") is None:
-        transaction_data["created_by"] = int(current_user.get("sub"))
+        transaction_data["created_by"] = current_user.id
 
     transaction_record = await service.create(
         db, InventoryTransactionCreate(**transaction_data), org_id
@@ -75,13 +80,13 @@ async def create_inventory_transaction(
     response_model=StandardResponse[InventoryTransactionResponse],
     status_code=status.HTTP_200_OK,
     summary="Get Inventory Transaction by ID",
-    dependencies=[Depends(ALLOW_ADMIN_OR_MANAGER)],
+    dependencies=[Depends(require_permission(Permissions.INVENTORY_TRANSACTION_READ))],
 )
 async def get_inventory_transaction(
     transaction_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     service: InventoryTransactionService = Depends(get_inventory_transaction_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Retrieve a specific inventory transaction by its ID.
 
@@ -101,7 +106,7 @@ async def get_inventory_transaction(
     Returns:
         StandardResponse[InventoryTransactionResponse]: A standardized wrapper with transaction details.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     transaction_record = await service.get(db, transaction_id, org_id)
 
     return StandardResponse(
@@ -116,14 +121,14 @@ async def get_inventory_transaction(
     response_model=StandardResponse[PaginatedData[InventoryTransactionResponse]],
     status_code=status.HTTP_200_OK,
     summary="List Transactions by Warehouse",
-    dependencies=[Depends(ALLOW_ADMIN_OR_MANAGER)],
+    dependencies=[Depends(require_permission(Permissions.INVENTORY_TRANSACTION_READ))],
 )
 async def get_transactions_by_warehouse(
     warehouse_id: int = Path(..., gt=0),
     params: PaginationParams = Depends(get_pagination_params),
     db: AsyncSession = Depends(get_db),
     service: InventoryTransactionService = Depends(get_inventory_transaction_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Retrieve a paginated list of transactions for a specific warehouse.
 
@@ -143,7 +148,7 @@ async def get_transactions_by_warehouse(
     Returns:
         StandardResponse[PaginatedData[InventoryTransactionResponse]]: A paginated list of transactions.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     items, total = await service.get_by_warehouse(db, warehouse_id, org_id, params)
 
     total_pages = (total + params.size - 1) // params.size
@@ -165,14 +170,14 @@ async def get_transactions_by_warehouse(
     response_model=StandardResponse[PaginatedData[InventoryTransactionResponse]],
     status_code=status.HTTP_200_OK,
     summary="List Transactions by Product",
-    dependencies=[Depends(ALLOW_ADMIN_OR_MANAGER)],
+    dependencies=[Depends(require_permission(Permissions.INVENTORY_TRANSACTION_READ))],
 )
 async def get_transactions_by_product(
     product_id: int = Path(..., gt=0),
     params: PaginationParams = Depends(get_pagination_params),
     db: AsyncSession = Depends(get_db),
     service: InventoryTransactionService = Depends(get_inventory_transaction_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Retrieve a paginated list of transactions for a specific product globally.
 
@@ -192,7 +197,7 @@ async def get_transactions_by_product(
     Returns:
         StandardResponse[PaginatedData[InventoryTransactionResponse]]: A paginated list of transactions.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     items, total = await service.get_by_product(db, product_id, org_id, params)
 
     total_pages = (total + params.size - 1) // params.size

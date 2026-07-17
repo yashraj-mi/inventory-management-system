@@ -59,6 +59,8 @@ class Settings(BaseSettings):
     ENV: str
     LOG_LEVEL: str
     SQL_ECHO: bool
+    REDIS_URL: str
+    PERMISSION_CACHE_TTL: int
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

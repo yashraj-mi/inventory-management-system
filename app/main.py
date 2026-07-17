@@ -13,7 +13,7 @@ from app.db.models.warehouse_users import WarehouseUsers  # noqa: F401
 from app.api.v1.router import api_router
 from app.middlewares.logging_middleware import RequestLoggingMiddleware
 from app.core.error_handlers import init_error_handlers
-
+from app.core.redis import init_redis, close_redis
 from app.core.logging_config import setup_logging
 
 setup_logging()
@@ -30,7 +30,9 @@ async def lifespan(app: FastAPI):
     # async with engine.begin() as conn:
     #     await conn.run_sync(Base.metadata.create_all)
 
+    await init_redis()
     yield
+    await close_redis()
 
 
 app = FastAPI(title="Inventory Management System", lifespan=lifespan)

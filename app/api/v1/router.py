@@ -4,7 +4,8 @@ router.py module.
 Provides core functionality and components for the router domain.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from app.dependencies.rate_limiter import RateLimiter
 from app.api.v1.endpoints.organization import router as organization_router
 from app.api.v1.endpoints.users import router as user_router
 from app.api.v1.endpoints.auth import router as auth_router
@@ -25,32 +26,77 @@ from app.api.v1.endpoints.backorder import router as backorder_router
 
 api_router = APIRouter(prefix="/api/v1")
 
-api_router.include_router(organization_router)
+api_router.include_router(
+    organization_router,
+    dependencies=[Depends(RateLimiter(seconds=60, times=30, scope="organization"))],
+)
 
-api_router.include_router(user_router)
+api_router.include_router(
+    user_router,
+    dependencies=[Depends(RateLimiter(seconds=60, times=30, scope="user"))],
+)
 
-api_router.include_router(auth_router)
+api_router.include_router(
+    auth_router,
+    dependencies=[Depends(RateLimiter(seconds=60, times=5, scope="auth"))],
+)
 
-api_router.include_router(warehouse_user_router)
+api_router.include_router(
+    warehouse_user_router,
+    dependencies=[Depends(RateLimiter(seconds=60, times=30, scope="warehouse_user"))],
+)
 
-api_router.include_router(warehouse_router)
+api_router.include_router(
+    warehouse_router,
+    dependencies=[Depends(RateLimiter(seconds=60, times=30, scope="warehouse"))],
+)
 
-api_router.include_router(category_router)
+api_router.include_router(
+    category_router,
+    dependencies=[Depends(RateLimiter(seconds=60, times=60, scope="category"))],
+)
 
-api_router.include_router(supplier_router)
+api_router.include_router(
+    supplier_router,
+    dependencies=[Depends(RateLimiter(seconds=60, times=60, scope="supplier"))],
+)
 
-api_router.include_router(product_router)
+api_router.include_router(
+    product_router,
+    dependencies=[Depends(RateLimiter(seconds=60, times=60, scope="product"))],
+)
 
-api_router.include_router(product_supplier_router)
+api_router.include_router(
+    product_supplier_router,
+    dependencies=[Depends(RateLimiter(seconds=60, times=60, scope="product_supplier"))],
+)
 
-api_router.include_router(inventory_router)
+api_router.include_router(
+    inventory_router,
+    dependencies=[Depends(RateLimiter(seconds=60, times=100, scope="inventory"))],
+)
 
-api_router.include_router(customer_router)
+api_router.include_router(
+    customer_router,
+    dependencies=[Depends(RateLimiter(seconds=60, times=60, scope="customer"))],
+)
 
-api_router.include_router(purchase_order_router)
+api_router.include_router(
+    purchase_order_router,
+    dependencies=[Depends(RateLimiter(seconds=60, times=100, scope="purchase_order"))],
+)
 
-api_router.include_router(inventory_transaction_router)
+api_router.include_router(
+    inventory_transaction_router,
+    dependencies=[Depends(RateLimiter(seconds=60, times=100, scope="inventory_txn"))],
+)
 
-api_router.include_router(sales_order_router)
+api_router.include_router(
+    sales_order_router,
+    dependencies=[Depends(RateLimiter(seconds=60, times=100, scope="sales_order"))],
+)
 
-api_router.include_router(backorder_router)
+api_router.include_router(
+    backorder_router,
+    dependencies=[Depends(RateLimiter(seconds=60, times=100, scope="backorder"))],
+)

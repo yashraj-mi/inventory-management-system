@@ -5,8 +5,8 @@ Handles creation, retrieval, updates, and deletion of product categories,
 ensuring that organizational constraints and name uniqueness rules are respected.
 """
 
+from app.db.session_utils import db_transaction
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from fastapi import status
 from app.repositories.category_repository import CategoryRepository
 from app.db.models.category import Category
@@ -84,30 +84,16 @@ class CategoryService:
             )
 
         category_model = Category(**category_data.model_dump())
-        try:
+        async with db_transaction(db, module="Category", action="operation"):
             category = await self.category_repo.create(db, category_model)
             await db.flush()
             await db.refresh(category)
             return category
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.ALREADY_EXISTS_FIELD.format(
-                    module="Category", field="name", value=category_data.name
-                ),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Category", action="creation"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
 
     @log_timing
-    async def get_category(self, db: AsyncSession, category_id: int) -> Category:
+    async def get_category(
+        self, db: AsyncSession, category_id: int, actor_org_id: int
+    ) -> Category:
         """
         Retrieves a category by ID, raising an error if not found.
 
@@ -121,8 +107,8 @@ class CategoryService:
         Raises:
             AppException: If not found (404).
         """
-        category = await self.category_repo.get(db, category_id)
-        if not category:
+        category = await self.category_repo.get_by_id(db, category_id)
+        if not category or category.organization_id != actor_org_id:
             raise AppException(
                 message=CrudMessages.NOT_FOUND.format(module="Category"),
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -147,7 +133,11 @@ class CategoryService:
 
     @log_timing
     async def update_category(
-        self, db: AsyncSession, category_id: int, update_data: CategoryUpdate
+        self,
+        db: AsyncSession,
+        category_id: int,
+        update_data: CategoryUpdate,
+        actor_org_id: int,
     ) -> Category:
         """
         Updates an existing category with partial data.
@@ -163,7 +153,7 @@ class CategoryService:
         Raises:
             AppException: If a duplicate category name is provided.
         """
-        category = await self.get_category(db, category_id)
+        category = await self.get_category(db, category_id, actor_org_id)
 
         # Extract only fields that were explicitly set in the request
         data_to_update = update_data.model_dump(exclude_unset=True)
@@ -183,53 +173,28 @@ class CategoryService:
         for key, value in data_to_update.items():
             setattr(category, key, value)
 
-        try:
+        async with db_transaction(db, module="Category", action="operation"):
             category = await self.category_repo.update(db, category)
             await db.flush()
             await db.refresh(category)
             return category
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_CONSTRAINT.format(module="Category"),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Category", action="update"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
 
     @log_timing
-    async def delete_category(self, db: AsyncSession, category_id: int) -> None:
+    async def delete_category(
+        self, db: AsyncSession, category_id: int, actor_org_id: int
+    ) -> None:
         """
         Deletes a category by ID.
 
         Args:
             db (AsyncSession): The active database session context.
             category_id (int): The ID of the category to delete.
+            actor_org_id (int): Organization ID of the requesting user.
         """
-        category = await self.get_category(db, category_id)
-        try:
+        category = await self.get_category(db, category_id, actor_org_id)
+        async with db_transaction(db, module="Category", action="operation"):
             await self.category_repo.delete(db, category)
             await db.flush()
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_RELATIONAL_CONSTRAINT.format(module="Category"),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Category", action="deletion"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
 
     @log_timing
     async def get_by_organization(
@@ -249,9 +214,7 @@ class CategoryService:
         Raises:
             AppException: If the organization doesn't exist (404).
         """
-        organization = await self.org_repo.get_by_id(
-            organization_id=organization_id, db=db
-        )
+        organization = await self.org_repo.get_by_id(db, organization_id)
 
         if not organization:
             raise AppException(

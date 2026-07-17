@@ -22,9 +22,14 @@ def get_user_repo() -> UserRepository:
     return UserRepository()
 
 
+from app.repositories.warehouse_repository import WarehouseRepository
+from app.dependencies.warehouse import get_warehouse_repo
+
+
 def get_user_service(
     user_repo: UserRepository = Depends(get_user_repo),
     org_repo: OrganizationRepository = Depends(get_organization_repo),
+    warehouse_repo: WarehouseRepository = Depends(get_warehouse_repo),
 ) -> UserService:
     """
     Provide a user service instance.
@@ -35,4 +40,6 @@ def get_user_service(
     Returns:
         Service instance for business logic.
     """
-    return UserService(user_repo=user_repo, org_repo=org_repo)
+    return UserService(
+        user_repo=user_repo, org_repo=org_repo, warehouse_repo=warehouse_repo
+    )

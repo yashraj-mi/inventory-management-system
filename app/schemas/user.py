@@ -7,9 +7,9 @@ user details within an organization's context, including role restrictions.
 
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr, Field, ConfigDict, field_validator
+from pydantic import BaseModel, EmailStr, Field, ConfigDict
 
-from app.constants.user_enum import UserRole
+
 from app.constants.common_enum import Status
 
 
@@ -26,30 +26,13 @@ class UserCreate(BaseModel):
         email (EmailStr): User's email, used for login and notifications.
     """
 
-    role: UserRole
+    role: str = Field(..., max_length=50)
+    warehouse_id: int | None = None
 
     first_name: str = Field(..., min_length=2, max_length=100)
     last_name: str | None = Field(default=None, min_length=2, max_length=100)
 
     email: EmailStr
-
-    @field_validator("role")
-    @classmethod
-    def restrict_role(cls, v: UserRole) -> UserRole:
-        """Prevent creation of SUPER_ADMIN users via the standard API payload.
-
-        Args:
-            v: The requested UserRole.
-
-        Returns:
-            UserRole: The validated role.
-
-        Raises:
-            ValueError: If the role is SUPER_ADMIN.
-        """
-        if v == UserRole.SUPER_ADMIN:
-            raise ValueError("Cannot create a user with SUPER_ADMIN role.")
-        return v
 
 
 class UserCreateInternal(UserCreate):
@@ -80,7 +63,8 @@ class UserUpdate(BaseModel):
         status (Status | None): New operational status (e.g., suspending the user).
     """
 
-    role: UserRole | None = None
+    role: str | None = None
+    warehouse_id: int | None = None
 
     first_name: str | None = Field(default=None, min_length=2, max_length=100)
 
@@ -114,7 +98,7 @@ class UserResponse(BaseModel):
 
     organization_id: int
 
-    role: UserRole
+    role: str | None = None
     status: Status
 
     first_name: str

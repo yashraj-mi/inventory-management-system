@@ -5,10 +5,10 @@ Handles registration, status lifecycle (approvals, rejections, deactivation),
 and deletion of organizations within the multi-tenant architecture.
 """
 
+from app.db.session_utils import db_transaction
 from typing import Sequence
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from app.repositories.organization_repository import OrganizationRepository
 from app.db.models.organization import Organization
 from app.schemas.organization import OrganizationCreate, OrganizationStatusUpdate
@@ -65,24 +65,10 @@ class OrganizationService:
             address=payload.address,
             status=OrganizationStatus.PENDING,
         )
-        try:
+        async with db_transaction(db, module="Organization", action="operation"):
             db_org = await self.organization_repo.create(db, organization)
             await db.flush()
             await db.refresh(db_org)
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=OrganizationMessages.ALREADY_EXISTS,
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Organization", action="registration"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
         return db_org
 
     @log_timing
@@ -174,23 +160,9 @@ class OrganizationService:
         org.status = payload.status
         org.action_by = admin_id
 
-        try:
+        async with db_transaction(db, module="Organization", action="operation"):
             await db.flush()
             await db.refresh(org)
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_CONSTRAINT.format(module="Organization"),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Organization", action="update"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
         return org
 
     @log_timing
@@ -208,22 +180,6 @@ class OrganizationService:
             AppException: On relational constraint failures (409) or unknown DB errors.
         """
         org = await self.get_organization(db, org_id)
-        try:
+        async with db_transaction(db, module="Organization", action="operation"):
             await self.organization_repo.delete(db, org)
             await db.flush()
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_RELATIONAL_CONSTRAINT.format(
-                    module="Organization"
-                ),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Organization", action="deletion"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )

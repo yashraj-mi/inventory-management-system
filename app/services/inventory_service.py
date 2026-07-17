@@ -6,8 +6,8 @@ adjustments. Enforces validation rules ensuring stock quantities are only modifi
 through legitimate ledger transactions.
 """
 
+from app.db.session_utils import db_transaction
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from fastapi import status
 from datetime import date, timedelta
 
@@ -124,24 +124,10 @@ class InventoryService:
             status=payload.status,
         )
 
-        try:
+        async with db_transaction(db, module="Inventory", action="operation"):
             await self.repo.create(db, inventory_record)
             await db.flush()
             await db.refresh(inventory_record)
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_CONSTRAINT.format(module="Inventory"),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Inventory", action="creation"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
         return inventory_record
 
     @log_timing
@@ -271,23 +257,9 @@ class InventoryService:
         for field, value in update_data.items():
             setattr(record, field, value)
 
-        try:
+        async with db_transaction(db, module="Inventory", action="operation"):
             await db.flush()
             await db.refresh(record)
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_CONSTRAINT.format(module="Inventory"),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Inventory", action="update"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
         return InventoryResponse.model_validate(record)
 
     @log_timing
@@ -299,25 +271,9 @@ class InventoryService:
         """
         record = await self._get(db, inventory_id, actor_org_id)
 
-        try:
+        async with db_transaction(db, module="Inventory", action="operation"):
             await self.repo.delete(db, record)
             await db.flush()
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_RELATIONAL_CONSTRAINT.format(
-                    module="Inventory"
-                ),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Inventory", action="deletion"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
 
     @log_timing
     async def adjust_stock(
@@ -456,6 +412,18 @@ class InventoryService:
     async def reserve_quantity(
         self, db: AsyncSession, product_id: int, warehouse_id: int, quantity: int
     ):
+        """
+        Reserves a specific quantity of a product in a warehouse.
+
+        Iterates over available batches and increments their reserved quantity until the
+        requested quantity is fully reserved.
+
+        Args:
+            db (AsyncSession): Active DB session.
+            product_id (int): Product ID to reserve.
+            warehouse_id (int): Warehouse ID where reservation occurs.
+            quantity (int): Total quantity to reserve.
+        """
         if quantity <= 0:
             return
 
@@ -476,26 +444,24 @@ class InventoryService:
                 inv.reserved_quantity += available
                 quantity -= available
 
-        try:
+        async with db_transaction(db, module="Inventory", action="operation"):
             await db.flush()
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_CONSTRAINT.format(module="Inventory"),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Inventory", action="reserve quantity"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
 
     async def release_reserved_quantity(
         self, db: AsyncSession, product_id: int, warehouse_id: int, quantity: int
     ):
+        """
+        Releases a previously reserved quantity of a product in a warehouse.
+
+        Iterates over batches with reserved stock and decrements their reserved quantity
+        until the requested quantity is fully released.
+
+        Args:
+            db (AsyncSession): Active DB session.
+            product_id (int): Product ID to release.
+            warehouse_id (int): Warehouse ID where release occurs.
+            quantity (int): Total quantity to release.
+        """
         if quantity <= 0:
             return
 
@@ -511,19 +477,5 @@ class InventoryService:
                 inv.reserved_quantity -= removed
                 quantity -= removed
 
-        try:
+        async with db_transaction(db, module="Inventory", action="operation"):
             await db.flush()
-        except IntegrityError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_CONSTRAINT.format(module="Inventory"),
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except SQLAlchemyError:
-            await db.rollback()
-            raise AppException(
-                message=CrudMessages.DB_UNEXPECTED.format(
-                    module="Inventory", action="release quantity"
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )

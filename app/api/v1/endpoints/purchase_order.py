@@ -4,6 +4,7 @@ This module defines routes for creating, managing, and tracking purchase orders,
 including lifecycle transitions and receiving workflows.
 """
 
+from app.db.models.user import User
 from fastapi import APIRouter, Depends, Path, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,7 +21,8 @@ from app.schemas.purchase_order import (
 from app.constants.purchase_order_enum import PurchaseOrderMessages
 from app.services.purchase_order_service import PurchaseOrderService
 from app.schemas.response import StandardResponse, PaginatedData
-from app.dependencies.auth import ALLOW_COMMON_ORG, ALLOW_ADMIN_OR_MANAGER
+from app.dependencies.rbac import require_permission
+from app.core.permissions import Permissions
 from app.core.security import get_current_user
 from app.constants.common_enum import CrudMessages
 from app.dependencies.pagination import PaginationParams, get_pagination_params
@@ -36,13 +38,13 @@ router = APIRouter(prefix="/purchase-orders", tags=["Purchase Orders"])
     response_model=StandardResponse[PurchaseOrderResponse],
     status_code=status.HTTP_201_CREATED,
     summary="Create a Draft Purchase Order",
-    dependencies=[Depends(ALLOW_COMMON_ORG)],
+    dependencies=[Depends(require_permission(Permissions.PURCHASE_ORDER_CREATE))],
 )
 async def create_purchase_order(
     payload: PurchaseOrderCreate,
     db: AsyncSession = Depends(get_db),
     service: PurchaseOrderService = Depends(get_po_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> StandardResponse[PurchaseOrderResponse]:
     """Create a new draft purchase order in a specific warehouse.
 
@@ -62,8 +64,8 @@ async def create_purchase_order(
         StandardResponse[PurchaseOrderResponse]: A standardized wrapper containing the PO.
     """
     print()
-    org_id = current_user.get("org_id")
-    user_id = current_user.get("sub")
+    org_id = current_user.organization_id
+    user_id = str(current_user.id)
 
     # We dynamically attach internal requirements missing from the user payload.
     internal_payload = PurchaseOrderCreateInternal(
@@ -87,13 +89,13 @@ async def create_purchase_order(
     response_model=StandardResponse[PaginatedData[PurchaseOrderResponse]],
     status_code=status.HTTP_200_OK,
     summary="List Purchase Orders for a Warehouse",
-    dependencies=[Depends(ALLOW_COMMON_ORG)],
+    dependencies=[Depends(require_permission(Permissions.PURCHASE_ORDER_READ))],
 )
 async def list_by_warehouse(
     warehouse_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     service: PurchaseOrderService = Depends(get_po_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     params: PaginationParams = Depends(get_pagination_params),
 ) -> StandardResponse[PaginatedData[PurchaseOrderResponse]]:
     """Retrieve a paginated list of all purchase orders sent to a specific warehouse.
@@ -114,7 +116,7 @@ async def list_by_warehouse(
     Returns:
         StandardResponse[PaginatedData[PurchaseOrderResponse]]: A paginated list of POs.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     records, total = await service.get_by_warehouse(db, warehouse_id, org_id, params)
 
     total_pages = (total + params.size - 1) // params.size
@@ -138,13 +140,13 @@ async def list_by_warehouse(
     response_model=StandardResponse[PurchaseOrderResponse],
     status_code=status.HTTP_200_OK,
     summary="Get a Purchase Order",
-    dependencies=[Depends(ALLOW_COMMON_ORG)],
+    dependencies=[Depends(require_permission(Permissions.PURCHASE_ORDER_READ))],
 )
 async def get_purchase_order(
     po_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     service: PurchaseOrderService = Depends(get_po_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> StandardResponse[PurchaseOrderResponse]:
     """Retrieve a specific purchase order by ID.
 
@@ -164,7 +166,7 @@ async def get_purchase_order(
     Returns:
         StandardResponse[PurchaseOrderResponse]: A standardized wrapper containing the PO details.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     response_data = await service.get(db, po_id, org_id)
 
     return StandardResponse(
@@ -179,14 +181,14 @@ async def get_purchase_order(
     response_model=StandardResponse[PurchaseOrderResponse],
     status_code=status.HTTP_200_OK,
     summary="Update a Draft Purchase Order",
-    dependencies=[Depends(ALLOW_COMMON_ORG)],
+    dependencies=[Depends(require_permission(Permissions.PURCHASE_ORDER_UPDATE))],
 )
 async def update_purchase_order(
     payload: PurchaseOrderUpdate,
     po_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     service: PurchaseOrderService = Depends(get_po_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> StandardResponse[PurchaseOrderResponse]:
     """Update details of a draft purchase order.
 
@@ -208,7 +210,7 @@ async def update_purchase_order(
     Returns:
         StandardResponse[PurchaseOrderResponse]: A standardized wrapper with the updated PO.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     response_data = await service.update(db, po_id, payload, org_id)
 
     return StandardResponse(
@@ -223,14 +225,14 @@ async def update_purchase_order(
     response_model=StandardResponse[PurchaseOrderResponse],
     status_code=status.HTTP_200_OK,
     summary="Update Purchase Order Status",
-    dependencies=[Depends(ALLOW_ADMIN_OR_MANAGER)],
+    dependencies=[Depends(require_permission(Permissions.PURCHASE_ORDER_UPDATE))],
 )
 async def update_purchase_order_status(
     payload: PurchaseOrderStatusUpdate,
     po_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     service: PurchaseOrderService = Depends(get_po_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> StandardResponse[PurchaseOrderResponse]:
     """Progress the lifecycle status of a purchase order.
 
@@ -251,8 +253,8 @@ async def update_purchase_order_status(
     Returns:
         StandardResponse[PurchaseOrderResponse]: A standardized wrapper with the updated PO.
     """
-    org_id = current_user.get("org_id")
-    user_id = int(current_user.get("sub"))
+    org_id = current_user.organization_id
+    user_id = current_user.id
     response_data = await service.update_status(db, po_id, payload, user_id, org_id)
 
     return StandardResponse(
@@ -267,13 +269,13 @@ async def update_purchase_order_status(
     response_model=StandardResponse[None],
     status_code=status.HTTP_200_OK,
     summary="Delete a Draft Purchase Order",
-    dependencies=[Depends(ALLOW_COMMON_ORG)],
+    dependencies=[Depends(require_permission(Permissions.PURCHASE_ORDER_DELETE))],
 )
 async def delete_purchase_order(
     po_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     service: PurchaseOrderService = Depends(get_po_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> StandardResponse[None]:
     """Permanently delete a draft purchase order.
 
@@ -293,7 +295,7 @@ async def delete_purchase_order(
     Returns:
         StandardResponse[None]: A standardized wrapper indicating successful deletion.
     """
-    org_id = current_user.get("org_id")
+    org_id = current_user.organization_id
     await service.delete(db, po_id, org_id)
 
     return StandardResponse(
@@ -308,14 +310,14 @@ async def delete_purchase_order(
     response_model=StandardResponse[None],
     status_code=status.HTTP_200_OK,
     summary="Update Purchase Order Items",
-    dependencies=[Depends(ALLOW_COMMON_ORG)],
+    dependencies=[Depends(require_permission(Permissions.PURCHASE_ORDER_UPDATE))],
 )
 async def update_purchase_order_items(
     payload: PurchaseOrderItemsUpdate,
     po_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     service: PurchaseOrderService = Depends(get_po_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> StandardResponse[None]:
     """Replace the items of a purchase order.
 
@@ -337,8 +339,8 @@ async def update_purchase_order_items(
     Returns:
         StandardResponse[None]: A standardized wrapper indicating success.
     """
-    org_id = current_user.get("org_id")
-    role = current_user.get("role")
+    org_id = current_user.organization_id
+    role = current_user.user_roles[0].role.name if current_user.user_roles else ""
 
     await service.update_order_items(db, po_id, payload, role, org_id)
 
@@ -352,13 +354,13 @@ async def update_purchase_order_items(
 @router.patch(
     "/{po_id}/received",
     response_model=StandardResponse[PurchaseOrderResponse],
-    dependencies=[Depends(ALLOW_ADMIN_OR_MANAGER)],
+    dependencies=[Depends(require_permission(Permissions.PURCHASE_ORDER_UPDATE))],
 )
 async def purchase_order_received(
     po_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     service: PurchaseOrderService = Depends(get_po_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Mark a purchase order as fully received.
 
@@ -378,8 +380,8 @@ async def purchase_order_received(
     Returns:
         StandardResponse[PurchaseOrderResponse]: A standardized wrapper with the updated PO.
     """
-    org_id = current_user.get("org_id")
-    role = current_user.get("role")
+    org_id = current_user.organization_id
+    role = current_user.user_roles[0].role.name if current_user.user_roles else ""
 
     po_order = await service.received_order(db, po_id, role, org_id)
     return StandardResponse(
@@ -392,14 +394,14 @@ async def purchase_order_received(
     response_model=StandardResponse[PurchaseOrderResponse],
     status_code=status.HTTP_200_OK,
     summary="Partially Receive Purchase Order",
-    dependencies=[Depends(ALLOW_ADMIN_OR_MANAGER)],
+    dependencies=[Depends(require_permission(Permissions.PURCHASE_ORDER_UPDATE))],
 )
 async def purchase_order_partially_received(
     payload: PartiallyReceivePayload,
     po_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     service: PurchaseOrderService = Depends(get_po_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Partially receive items for a purchase order and update inventory.
 
@@ -420,8 +422,8 @@ async def purchase_order_partially_received(
     Returns:
         StandardResponse[PurchaseOrderResponse]: A standardized wrapper with the updated PO.
     """
-    org_id = current_user.get("org_id")
-    role = current_user.get("role")
+    org_id = current_user.organization_id
+    role = current_user.user_roles[0].role.name if current_user.user_roles else ""
 
     po_order = await service.partially_received_order(db, po_id, payload, role, org_id)
     return StandardResponse(

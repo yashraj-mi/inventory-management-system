@@ -32,10 +32,32 @@ def enable_sql_profiling(engine: Engine) -> None:
     def before_cursor_execute(
         conn, cursor, statement, parameters, context, executemany
     ):
+        """
+        Hook that fires before a SQL query is executed to record its start time.
+
+        Args:
+            conn: SQLAlchemy connection object.
+            cursor: DBAPI cursor.
+            statement: The SQL statement to be executed.
+            parameters: The parameters for the SQL statement.
+            context: The execution context.
+            executemany: Boolean indicating if this is an executemany operation.
+        """
         conn.info.setdefault("query_start_time", []).append(time.perf_counter())
 
     @event.listens_for(engine, "after_cursor_execute")
     def after_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+        """
+        Hook that fires after a SQL query executes to record its duration.
+
+        Args:
+            conn: SQLAlchemy connection object.
+            cursor: DBAPI cursor.
+            statement: The SQL statement to be executed.
+            parameters: The parameters for the SQL statement.
+            context: The execution context.
+            executemany: Boolean indicating if this is an executemany operation.
+        """
         start = conn.info["query_start_time"].pop(-1)
         duration_ms = (time.perf_counter() - start) * 1000
         clean_statement = " ".join(statement.split())

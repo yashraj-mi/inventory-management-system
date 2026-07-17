@@ -4,6 +4,7 @@ This module provides the SalesOrderRepository, handling data access for outbound
 customer orders to track fulfillments, packing slips, and order lifecycles.
 """
 
+from app.repositories.base_repository import BaseRepository
 from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,40 +14,14 @@ from app.dependencies.pagination import PaginationParams
 from app.repositories.base import paginate_query
 
 
-class SalesOrderRepository:
+class SalesOrderRepository(BaseRepository[SalesOrder]):
     """Manage data access for SalesOrder entities.
 
     Abstracts database operations for tracking customer orders, supporting
     warehouse-specific pagination and lookup by business-facing order numbers.
     """
 
-    async def create(self, db: AsyncSession, so_data: SalesOrder) -> SalesOrder:
-        """Stage a new sales order record for database insertion.
-
-        Args:
-            db (AsyncSession): The active asynchronous database session.
-            so_data (SalesOrder): The sales order entity to insert.
-
-        Returns:
-            SalesOrder: The staged sales order instance.
-        """
-        db.add(so_data)
-        return so_data
-
-    async def get_by_id(self, db: AsyncSession, so_id: int) -> SalesOrder | None:
-        """Fetch a specific sales order by its primary key.
-
-        Args:
-            db (AsyncSession): The active asynchronous database session.
-            so_id (int): The unique identifier of the sales order.
-
-        Returns:
-            SalesOrder | None: The requested sales order, or None if not found.
-
-        Raises:
-            SQLAlchemyError: If the database operation fails.
-        """
-        return await db.get(SalesOrder, so_id)
+    model = SalesOrder
 
     async def get_by_order_number(
         self, db: AsyncSession, order_number: str
@@ -91,15 +66,3 @@ class SalesOrderRepository:
             .order_by(SalesOrder.id.desc())
         )
         return await paginate_query(db, query, params)
-
-    async def delete(self, db: AsyncSession, so_record: SalesOrder) -> None:
-        """Stage a sales order for deletion from the database.
-
-        Args:
-            db (AsyncSession): The active asynchronous database session.
-            so_record (SalesOrder): The sales order instance to remove.
-
-        Raises:
-            SQLAlchemyError: If the database operation fails.
-        """
-        await db.delete(so_record)

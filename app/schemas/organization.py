@@ -6,7 +6,6 @@ tenant organization details within the multi-tenant system.
 """
 
 from datetime import datetime
-from typing import Optional
 from pydantic import Field, EmailStr, BaseModel, ConfigDict
 from app.constants.organization_enum import OrganizationStatus
 
@@ -66,7 +65,7 @@ class OrganizationResponse(BaseModel):
     phone: str
     address: str
     status: OrganizationStatus
-    action_by: Optional[int] = None
+    action_by: int | None = None
     created_at: datetime
     updated_at: datetime
 
