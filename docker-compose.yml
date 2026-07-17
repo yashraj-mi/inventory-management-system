@@ -1,4 +1,18 @@
 services:
+  app:
+    build: .
+    container_name: ims_app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+
   db:
     image: postgres:15-alpine
     container_name: postgres_db

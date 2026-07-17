@@ -19,7 +19,7 @@ from app.services.inventory_transaction_service import InventoryTransactionServi
 from app.dependencies.inventory_transaction import get_inventory_transaction_service
 from app.dependencies.rbac import require_permission
 from app.core.permissions import Permissions
-from app.dependencies.auth import get_current_user
+from app.core.security import get_current_user
 from app.dependencies.pagination import PaginationParams, get_pagination_params
 
 

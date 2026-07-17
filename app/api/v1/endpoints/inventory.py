@@ -19,7 +19,7 @@ from app.services.inventory_service import InventoryService
 from app.schemas.response import StandardResponse, PaginatedData
 from app.dependencies.rbac import require_permission
 from app.core.permissions import Permissions
-from app.dependencies.auth import get_current_user
+from app.core.security import get_current_user
 from app.constants.inventory_enum import InventoryMessages
 from app.constants.common_enum import CrudMessages
 from app.dependencies.pagination import PaginationParams, get_pagination_params
