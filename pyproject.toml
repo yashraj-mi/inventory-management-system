@@ -5,16 +5,24 @@ description = "Inventory Management System"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "alembic>=1.18.5",
     "asyncpg>=0.31.0",
     "email-validator>=2.3.0",
     "fastapi>=0.138.0",
-    "jose>=1.0.0",
-    "jwt>=1.4.0",
-    "passlib[bcrypt]>=1.7.4",
+    "fastapi-mail>=1.6.5",
     "pwdlib[argon2]>=0.3.0",
     "pydantic-settings>=2.14.2",
     "python-dotenv>=1.2.2",
     "python-jose[cryptography]>=3.5.0",
+    "redis>=8.0.1",
     "sqlalchemy>=2.0.51",
     "uvicorn>=0.49.0",
 ]
+
+[tool.ruff.lint]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"alembic/env.py" = ["E402"]
+"app/api/v1/endpoints/sales_order.py" = ["E402"]
+"app/schemas/response.py" = ["E402"]
