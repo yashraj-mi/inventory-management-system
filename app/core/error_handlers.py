@@ -9,6 +9,7 @@ returned in a standardized JSON response format.
 from fastapi import Request, FastAPI, status
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.core.exceptions import AppException
 from app.schemas.response import StandardResponse
 import logging
@@ -81,6 +82,20 @@ def init_error_handlers(app: FastAPI):
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content=response_body.model_dump(),
+        )
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+        """
+        Handle standard HTTP exceptions (e.g., 404 Not Found, 405 Method Not Allowed).
+
+        Wraps standard Starlette/FastAPI HTTPExceptions in the StandardResponse format.
+        """
+        response_body = StandardResponse(
+            success=False, message=str(exc.detail), data=None
+        )
+        return JSONResponse(
+            status_code=exc.status_code, content=response_body.model_dump()
         )
 
     @app.exception_handler(Exception)

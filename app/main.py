@@ -5,7 +5,9 @@ Provides core functionality and components for the main domain.
 """
 
 from contextlib import asynccontextmanager
+import os
 from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.db.models.organization import Organization  # noqa: F401
 from app.db.models.warehouse import Warehouse  # noqa: F401
@@ -49,3 +51,14 @@ app.add_middleware(
 init_error_handlers(app)
 
 app.include_router(api_router)
+
+
+@app.get("/", response_class=HTMLResponse, tags=["Root"])
+async def root():
+    """
+    Serve the beautifully designed landing page for the root URL.
+    """
+    html_path = os.path.join(os.path.dirname(__file__), "templates", "index.html")
+    with open(html_path, "r", encoding="utf-8") as f:
+        html_content = f.read()
+    return HTMLResponse(content=html_content)
